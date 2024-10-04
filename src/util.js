@@ -1,16 +1,29 @@
 const moment = require('moment');
 
+
 module.exports = {
   SLOT_DURATION: 30, // MINUTOS
   isOpened: async (horarios) => {
     // VERIFICANDO SE EXISTE REGISTRO NAQUELE DIA DA SEMANA
-    const horariosDia = horarios.filter((h) => h.dias.includes(moment().day()));
+    const today = moment();
+    console.log(today);
+  
+    const horariosDia = horarios.filter((h) => h.dias.includes(today.day()));
+  
     if (horariosDia.length > 0) {
-      // VERIFICANDO HORARIOS
+      // VERIFICANDO HORÁRIOS
       for (let h of horariosDia) {
-        const inicio = moment(moment(h.inicio).format('HH:mm'), 'HH:mm:ss');
-        const fim = moment(moment(h.fim).format('HH:mm'), 'HH:mm:ss');
-        if (moment().isBetween(inicio, fim)) {
+        // Transformando `inicio` e `fim` para o formato 'HH:mm' (somente horas)
+        const inicio = moment(h.inicio, 'HH:mm').utcOffset(0).format('HH:mm');
+        const fim = moment(h.fim, 'HH:mm').utcOffset(0).format('HH:mm');
+  
+        // Obtendo o horário atual no formato 'HH:mm'
+        const agora = today.format('HH:mm');
+  
+        console.log('Horário de Início:', inicio, 'Horário de Fim:', fim, 'Agora:', agora);
+  
+        // Comparando o horário atual com `inicio` e `fim`
+        if (agora >= inicio && agora <= fim) {
           return true;
         }
       }
@@ -18,6 +31,10 @@ module.exports = {
     }
     return false;
   },
+  
+
+  
+  
   toCents: (price) => {
     return parseInt(price.toString().replace('.', '').replace(',', ''));
   },
@@ -58,7 +75,9 @@ module.exports = {
     return parseInt(parseInt(hour) * 60 + parseInt(minutes));
   },
   splitByValue: (array, value) => {
-    let newArray = [[]];
+    let newArray = [
+      []
+    ];
     array.forEach((item) => {
       if (item !== value) {
         newArray[newArray.length - 1].push(item);

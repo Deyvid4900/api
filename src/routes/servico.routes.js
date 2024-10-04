@@ -70,60 +70,82 @@ router.post('/', async (req, res) => {
   FAZER NA #01
 */
 router.put('/:id', async (req, res) => {
-  var busboy = new Busboy({ headers: req.headers });
+  const busboy = new Busboy({ headers: req.headers });
+
   busboy.on('finish', async () => {
     try {
       let errors = [];
       let arquivos = [];
 
+      // Verifica se existem arquivos na requisição
       if (req.files && Object.keys(req.files).length > 0) {
         for (let key of Object.keys(req.files)) {
           const file = req.files[key];
-
+          
           const nameParts = file.name.split('.');
-          const fileName = `${new Date().getTime()}.${
-            nameParts[nameParts.length - 1]
-          }`;
+          const fileName = `${new Date().getTime()}.${nameParts[nameParts.length - 1]}`;
           const path = `servicos/${req.body.salaoId}/${fileName}`;
 
-          // const response = await aws.uploadToS3(
-          //   file,
-          //   path
-          //   //, acl = https://docs.aws.amazon.com/pt_br/AmazonS3/latest/dev/acl-overview.html
-          // );
+          // Implementar upload para S3 aqui
+          // const response = await aws.uploadToS3(file, path);
 
-          if (response.error) {
-            errors.push({ error: true, message: response.message.message });
-          } else {
-            arquivos.push(path);
-          }
+          // Exemplo: se o upload falhar
+          // if (response.error) {
+          //   errors.push({ error: true, message: response.message });
+          // } else {
+          //   arquivos.push(path);
+          // }
         }
       }
 
+      // Se houver erros com os arquivos, retornar o primeiro erro
       if (errors.length > 0) {
-        res.json(errors[0]);
-        return false;
+        return res.status(400).json(errors[0]);
       }
 
-      //  ATUALIZAR SERVIÇO
-      let jsonServico = JSON.parse(req.body.servico);
-      await Servico.findByIdAndUpdate(req.params.id, jsonServico);
+      // Verificar se o campo 'servico' foi enviado
+      if (!req.body.servico) {
+        return res.status(400).json({ error: true, message: 'Campo "servico" é necessário.' });
+      }
 
-      // CRIAR ARQUIVO
-      arquivos = arquivos.map((arquivo) => ({
-        referenciaId: req.params.id,
-        model: 'Servico',
-        arquivo,
-      }));
-      await Arquivos.insertMany(arquivos);
+      // Tentar fazer o parsing do JSON
+      let jsonServico;
+      try {
+        jsonServico = JSON.parse(req.body.servico);
+      } catch (parseError) {
+        return res.status(400).json({ error: true, message: 'Erro ao analisar o JSON do campo "servico".' });
+      }
 
-      res.json({ error: false });
+      // Atualizar o serviço
+      console.log(req.body.servicoId)
+      const updatedServico = await Servico.findByIdAndUpdate(req.body.servicoId, jsonServico, { new: true });
+
+      if (!updatedServico) {
+        return res.status(404).json({ error: true, message: 'Serviço não encontrado.' });
+      }
+
+      // Se houver arquivos, inserir registros de arquivos no banco de dados
+      if (arquivos.length > 0) {
+        const arquivosDocs = arquivos.map(arquivo => ({
+          referenciaId: req.params.id,
+          model: 'Servico',
+          arquivo,
+        }));
+        await Arquivos.insertMany(arquivosDocs);
+      }
+
+      return res.json({ error: false, message: 'Serviço atualizado com sucesso!' });
     } catch (err) {
-      res.json({ error: true, message: err.message });
+      console.error(err); // Logar o erro no servidor
+      return res.status(500).json({ error: true, message: err.message });
     }
   });
+
   req.pipe(busboy);
 });
+
+
+
 
 /*
   FAZER NA #01

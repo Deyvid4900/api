@@ -24,6 +24,10 @@ const salao = new Schema({
     type: Date,
     default: Date.now,
   },
+  plano:{
+    type:String,
+    enum: ['básico',"gold",'premium',"teste"],
+  }
 });
 
 salao.index({ coordenadas: '2dsphere' });
