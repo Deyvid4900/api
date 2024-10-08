@@ -7,7 +7,7 @@ const Salao = require('../models/salao');
 const Servico = require('../models/servico');
 const Colaborador = require('../models/colaborador');
 
-const moment = require('moment');
+const moment = require('moment-timezone');
 const mongoose = require('mongoose');
 const _ = require('lodash');
 
@@ -59,29 +59,22 @@ router.post('/filter', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const db = mongoose.connection;
-
   try {
     const {
       clienteId,
       salaoId,
       servicoId,
       colaboradorId,
-      data // A data do agendamento que você deseja verificar
+      data
     } = req.body;
-    // Log para ver a data recebida
 
-    // Tente analisar a data com Moment.js
-    let parsedDate = moment(data); // Alterado de const para let
+    // Log da data recebida
+    console.log("corpo da requisição: " + data);
 
-    // Se a data ainda for inválida, tente usar um formato explícito
-    if (!parsedDate.isValid()) {
-      console.log("Tentando analisar com formato específico");
-      const formatoEsperado = "YYYY-MM-DDTHH:mm:ssZ"; // Ajuste conforme necessário
-      parsedDate = moment(data, formatoEsperado); // Aqui, use parsedDate
-    }
+    // Parse da data de agendamento e conversão para o fuso horário local (America/Sao_Paulo)
+    let parsedDate = moment.utc(data);
+    console.log("dataParseada (Local): " + parsedDate.format());
 
-    // Verifique se a data é válida
     if (!parsedDate.isValid()) {
       return res.json({
         error: true,
@@ -89,77 +82,93 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Converta para um objeto Date
-    const dataAgendamento = parsedDate.toDate(); // Converta para Date
+    // Converta a data para o formato ISO
+    const dataAgendamento = parsedDate.toISOString();
+    console.log("dataAgendamento (UTC): " + dataAgendamento);
 
     // Obtenha o dia da semana (0-6), onde 0 = domingo e 6 = sábado
     const diaDaSemana = parsedDate.day();
+    console.log("dia da semana: " + diaDaSemana);
 
     // Recupere os horários do salão
     const horarios = await Horario.find({
       salaoId
-    }); // Ajuste conforme seu modelo de horários
+    });
+    console.log("horarios do Salao: ", horarios);
 
+    if (!horarios.length) {
+      return res.json({
+        error: true,
+        message: "Nenhum horário disponível para o salão."
+      });
+    }
+
+    // Verifique se há horário disponível no dia e no horário selecionado
     console.log(horarios)
-    const horarioDisponivel = horarios.map(horario => {
-      // Extrai as horas dos horários no formato 'HH:mm'
-      const dataAgendamentoo = moment(dataAgendamento).format('HH:mm');
-      const inicioHorario = moment(horario.inicio).format('HH:mm');
-      const fimHorario = moment(horario.fim).format('HH:mm');
+    const horarioDisponivel = horarios.some(horario => {
+      const inicioHorario = moment(horario.inicio).utc();
+      const fimHorario = moment(horario.fim).utc();
+      const agendamentoHorario = moment(parsedDate).utc(); // Certifique-se de que parsedDate está em UTC
     
-      console.log("Horário do agendamento:", dataAgendamentoo);
-      console.log("Início do horário:", inicioHorario);
-      console.log("Fim do horário:", fimHorario);
-    
-      // Comparação correta: verifica se a dataAgendamento está entre inicio e fim
-      let horaDisponivel = false;
-      if (dataAgendamentoo >= inicioHorario && dataAgendamentoo <= fimHorario) {
-        horaDisponivel = true;
+      // Verifique se o horário de fim é posterior ao horário de início
+      if (fimHorario.isBefore(inicioHorario)) {
+        console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
+        return false; // Retorna false se o horário é inválido
       }
     
-      console.log("Horário disponível:", horaDisponivel);
+      console.log("Início do horário (UTC): ", inicioHorario.format());
+      console.log("Fim do horário (UTC): ", fimHorario.format());
+      console.log("Horário do agendamento (UTC): ", agendamentoHorario.format());
     
-      return horaDisponivel;
+      // Extrair apenas as horas e minutos para comparação
+      const horaInicio = inicioHorario.hour() * 60 + inicioHorario.minute();
+      const horaFim = fimHorario.hour() * 60 + fimHorario.minute();
+      const horaAgendamento = agendamentoHorario.hour() * 60 + agendamentoHorario.minute();
+    
+      const horaDentroIntervalo = horaAgendamento >= horaInicio && horaAgendamento < horaFim;
+    
+      const diaDisponivel = horario.dias.includes(diaDaSemana);
+    
+      console.log("Horário dentro do intervalo: ", horaDentroIntervalo);
+      console.log("Dia disponível: ", diaDisponivel);
+    
+      return horaDentroIntervalo && diaDisponivel;
     });
     
 
+    // Resultado final
+    console.log("Disponibilidade do horário: ", horarioDisponivel);
 
+
+
+
+
+    // Se não houver horário disponível
     if (!horarioDisponivel) {
       return res.json({
         error: true,
-        message: "Este horário não esta disponível para agendamentos."
+        message: "Este horário não está disponível para agendamentos."
       });
     }
 
-
-
-    const diaDisponivel = horarios.some(horario => {
-      return horario.dias.includes(diaDaSemana);
-    });
-
-    if (!diaDisponivel) {
-      return res.json({
-        error: true,
-        message: "O dia selecionado não está disponível para agendamentos."
-      });
-    }
-
+    // Prosseguir com a criação do agendamento
     const cliente = await Cliente.findById(clienteId).select('nome endereco');
     const salao = await Salao.findById(salaoId).select('_id');
     const servico = await Servico.findById(servicoId).select('preco titulo');
     const colaborador = await Colaborador.findById(colaboradorId).select('_id');
-
-    // CRIAR O AGENDAMENTOS E AS TRANSAÇÕES
-    let agendamento = req.body;
-    agendamento = {
-      ...agendamento,
-      data: dataAgendamento, // Adicione a data convertida aqui
+    console.log(dataAgendamento)
+    // CRIAR O AGENDAMENTO E AS TRANSAÇÕES
+    let agendamento = {
+      ...req.body,
+      data: dataAgendamento, // Mantendo o formato ISO (UTC)
       valor: servico.preco,
     };
+
     await new Agendamento(agendamento).save();
 
     res.json({
-      error: false
+      error: false,
+      message: "Agendamento criado com sucesso."
     });
   } catch (err) {
     res.json({
@@ -168,11 +177,6 @@ router.post('/', async (req, res) => {
     });
   }
 });
-
-
-
-
-
 
 
 router.post('/dias-disponiveis', async (req, res) => {
