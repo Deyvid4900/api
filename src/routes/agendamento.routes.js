@@ -109,32 +109,32 @@ router.post('/', async (req, res) => {
       const inicioHorario = moment(horario.inicio).utc();
       const fimHorario = moment(horario.fim).utc();
       const agendamentoHorario = moment(parsedDate).utc(); // Certifique-se de que parsedDate está em UTC
-    
+
       // Verifique se o horário de fim é posterior ao horário de início
       if (fimHorario.isBefore(inicioHorario)) {
         console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
         return false; // Retorna false se o horário é inválido
       }
-    
+
       console.log("Início do horário (UTC): ", inicioHorario.format());
       console.log("Fim do horário (UTC): ", fimHorario.format());
       console.log("Horário do agendamento (UTC): ", agendamentoHorario.format());
-    
+
       // Extrair apenas as horas e minutos para comparação
       const horaInicio = inicioHorario.hour() * 60 + inicioHorario.minute();
       const horaFim = fimHorario.hour() * 60 + fimHorario.minute();
       const horaAgendamento = agendamentoHorario.hour() * 60 + agendamentoHorario.minute();
-    
+
       const horaDentroIntervalo = horaAgendamento >= horaInicio && horaAgendamento < horaFim;
-    
+
       const diaDisponivel = horario.dias.includes(diaDaSemana);
-    
+
       console.log("Horário dentro do intervalo: ", horaDentroIntervalo);
       console.log("Dia disponível: ", diaDisponivel);
-    
+
       return horaDentroIntervalo && diaDisponivel;
     });
-    
+
 
     // Resultado final
     console.log("Disponibilidade do horário: ", horarioDisponivel);
@@ -343,5 +343,52 @@ router.post('/dias-disponiveis', async (req, res) => {
     });
   }
 });
+
+router.get('/agendamentos/:clienteId', async (req, res) => {
+  try {
+    const {
+      clienteId
+    } = req.params;
+
+    // Verifique se o cliente existe
+    const cliente = await Cliente.findById(clienteId);
+    if (!cliente) {
+      return res.status(404).json({
+        error: true,
+        message: 'Cliente não encontrado.'
+      });
+    }
+
+    // Buscar os agendamentos para o cliente
+    const agendamentos = await Agendamento.find({
+        clienteId
+      })
+      .populate([{
+          path: 'servicoId',
+          select: 'titulo duracao'
+        },
+        {
+          path: 'colaboradorId',
+          select: 'nome'
+        },
+        {
+          path: 'salaoId',
+          select: 'nome'
+        }
+      ]);
+
+    res.json({
+      error: false,
+      agendamentos
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      error: true,
+      message: err.message
+    });
+  }
+});
+
 
 module.exports = router;

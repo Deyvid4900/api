@@ -6,6 +6,8 @@ const Servico = require('../models/servico');
 const Arquivos = require('../models/arquivos');
 const moment = require('moment');
 const ColaboradorServico = require('../models/relationship/colaboradorServico');
+
+const Colaborador = require('../models/colaborador');
 /*
   FAZER NA #01
 */
@@ -319,6 +321,40 @@ router.get('/colaborador/:colaboradorId', async (req, res) => {
     });
   }
 });
+router.get('/:servicoId/colaboradores', async (req, res) => {
+  try {
+    const { servicoId } = req.params;
+
+    // Encontrar colaboradores que possuem o serviço
+    const colaboradores = await ColaboradorServico.find({ servicoId });
+
+    if (!colaboradores || colaboradores.length === 0) {
+      return res.status(404).json({
+        error: true,
+        message: 'Nenhum colaborador encontrado para este serviço.'
+      });
+    }
+
+    // Obter os IDs dos colaboradores
+    const colaboradorIds = colaboradores.map(c => c.colaboradorId);
+
+    // Buscar informações dos colaboradores
+    const colaboradoresInfo = await Colaborador.find({
+      _id: { $in: colaboradorIds }
+    });
+
+    res.json({
+      error: false,
+      colaboradores: colaboradoresInfo,
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: true,
+      message: err.message
+    });
+  }
+});
+
 
 
 

@@ -69,7 +69,7 @@ router.post('/', async (req, res) => {
     ) {
       res.json({ error: true, message: 'Cliente já cadastrado!' });
     } else {
-      res.json({ error: false });
+      res.json({ error: false, clienteId });
     }
   } catch (err) {
     await session.abortTransaction();
@@ -77,6 +77,7 @@ router.post('/', async (req, res) => {
     res.json({ error: true, message: err.message });
   }
 });
+
 
 router.post('/filter', async (req, res) => {
   try {

@@ -39,12 +39,13 @@ const cliente = new Schema({
     tipo: {
       type: String,
       enum: ['cpf', 'cnpj'],
-      required: true,
+      required: false,
     },
     numero: {
       type: String,
-      required: true,
+      required: false,
     },
+    required: false,
   },
   endereco: {
     cidade: String,
@@ -53,6 +54,7 @@ const cliente = new Schema({
     logradouro: String,
     numero: String,
     pais: String,
+    required: false,
   },
   dataCadastro: {
     type: Date,
