@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
-const salao = new Schema({
+const salaoSchema = new Schema({
   nome: String,
   foto: String,
   capa: String,
@@ -24,12 +24,13 @@ const salao = new Schema({
     type: Date,
     default: Date.now,
   },
-  plano:{
-    type:String,
-    enum: ['básico',"gold",'premium',"teste"],
+  plano: {
+    type: String,
+    enum: ['básico', 'gold', 'premium', 'teste',"master"], // Define os valores permitidos
+    required: true // Campo obrigatório
   }
 });
 
-salao.index({ coordenadas: '2dsphere' });
+salaoSchema.index({ coordenadas: '2dsphere' });
 
-module.exports = mongoose.model('Salao', salao);
+module.exports = mongoose.model('Salao', salaoSchema);

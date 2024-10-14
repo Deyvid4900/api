@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 
 const router = express.Router();
 const Colaborador = require('../models/colaborador');
+const Salao = require('../models/salao');
 const SalaoColaborador = require('../models/relationship/salaoColaborador');
 const ColaboradorServico = require('../models/relationship/colaboradorServico');
 const moment = require('moment');
@@ -17,62 +18,82 @@ router.post('/', async (req, res) => {
   session.startTransaction();
 
   try {
-    const {
-      colaborador,
-      salaoId
-    } = req.body;
-    let newColaborador = null;
+    const { colaborador, salaoId } = req.body;
 
+    // Verificar se todos os campos obrigatórios estão presentes
+    if (!colaborador || !salaoId || !colaborador.nome || !colaborador.email || !colaborador.telefone || !colaborador.especialidades) {
+      return res.json({
+        error: true,
+        message: 'Todos os campos obrigatórios devem ser preenchidos.',
+      });
+    }
+
+    // Verificar o tipo de plano e a quantidade de colaboradores
+    const salao = await Salao.findById(salaoId);
+    if (!salao) {
+      return res.json({
+        error: true,
+        message: 'Salão não encontrado.',
+      });
+    }
+
+    const colaboradoresCount = await SalaoColaborador.countDocuments({ salaoId });
+
+    const planoLimites = {
+      'básico': 1,
+      'gold': 3,
+      'premium': 6,
+      'teste': 6,
+      'master': 999,
+    };
+
+    if (colaboradoresCount >= planoLimites[salao.plano]) {
+      return res.json({
+        error: true,
+        message: `O plano ${salao.plano} permite no máximo ${planoLimites[salao.plano]} colaboradores.`,
+      });
+    }
+
+    // Verificar se o colaborador já existe
     const existentColaborador = await Colaborador.findOne({
-      $or: [{
-          email: colaborador.email
-        },
-        {
-          telefone: colaborador.telefone
-        },
-        //{ cpf: colaborador.cpf },
+      $or: [
+        { email: colaborador.email },
+        { telefone: colaborador.telefone },
+        // { cpf: colaborador.cpf }, // Descomentar se CPF for necessário
       ],
     });
 
+    if (existentColaborador) {
+      return res.json({
+        error: true,
+        message: 'Colaborador já cadastrado!',
+      });
+    }
 
-
-    newColaborador = await new Colaborador({
+    // Criar novo colaborador
+    const newColaborador = await new Colaborador({
       ...colaborador,
-    }).save({
-      session
-    });
+    }).save({ session });
 
-
-
-    const colaboradorId = newColaborador._id
-
-    console.log(colaboradorId)
+    const colaboradorId = newColaborador._id;
 
     // RELAÇÃO COM O SALÃO
-    const existentRelationship = await SalaoColaborador.findOne({
-      salaoId,
-      colaboradorId,
-    });
+    const existentRelationship = await SalaoColaborador.findOne({ salaoId, colaboradorId });
 
     if (!existentRelationship) {
       await new SalaoColaborador({
         salaoId,
         colaboradorId,
         status: colaborador.vinculo,
-      }).save({
-        session
-      });
+      }).save({ session });
     }
 
     if (existentRelationship && existentRelationship.status === 'I') {
-      await SalaoColaborador.findOneAndUpdate({
-        salaoId,
-        colaboradorId,
-      }, {
-        status: 'A'
-      }, {
-        session
-      });
+      await SalaoColaborador.findOneAndUpdate(
+        { salaoId, colaboradorId },
+        { status: 'A' },
+        { session }
+      );
     }
 
     // RELAÇÃO COM OS SERVIÇOS / ESPECIALIDADES
@@ -83,25 +104,23 @@ router.post('/', async (req, res) => {
       }))
     );
 
+    // Confirmar transação
     await session.commitTransaction();
     session.endSession();
 
-    if (existentRelationship && existentColaborador) {
-      res.json({
-        error: true,
-        message: 'Colaborador já cadastrado!'
-      });
-    } else {
-      res.json({
-        error: false
-      });
-    }
+    res.json({
+      error: false,
+      message: 'Colaborador cadastrado com sucesso!',
+    });
   } catch (err) {
+    // Abortar a transação em caso de erro
     await session.abortTransaction();
     session.endSession();
-    res.json({
+
+    // Tratar erro e retornar mensagem
+    res.status(500).json({
       error: true,
-      message: err.message
+      message: err.message || 'Erro no servidor.',
     });
   }
 });
@@ -129,31 +148,31 @@ router.post('/filter', async (req, res) => {
 */
 router.get('/salao/:salaoId', async (req, res) => {
   try {
-    const {
-      salaoId
-    } = req.params;
-    let listaColaboradores = [];
+    const { salaoId } = req.params;
 
+    // Buscar apenas colaboradores com status "A" (ativos)
     const colaboradores = await SalaoColaborador.find({
-        salaoId,
-        status: {
-          $ne: 'E'
-        },
+      salaoId,
+      status: 'A' // Filtrar apenas os colaboradores com status 'A'
+    })
+    .populate('colaboradorId')
+    .select('colaboradorId dataCadastro status');
+
+    // Usar Promise.all para buscar todas as especialidades em paralelo
+    const listaColaboradores = await Promise.all(
+      colaboradores.map(async (colaborador) => {
+        const especialidades = await ColaboradorServico.find({
+          colaboradorId: colaborador.colaboradorId._id,
+        }).select('servicoId'); // Buscar apenas os IDs de serviço
+
+        return {
+          ...colaborador._doc,
+          especialidades: especialidades.map((e) => e.servicoId),
+        };
       })
-      .populate('colaboradorId')
-      .select('colaboradorId dataCadastro status');
+    );
 
-    for (let colaborador of colaboradores) {
-      const especialidades = await ColaboradorServico.find({
-        colaboradorId: colaborador.colaboradorId._id,
-      });
-
-      listaColaboradores.push({
-        ...colaborador._doc,
-        especialidades: especialidades.map((e) => e.servicoId),
-      });
-    }
-
+    // Formatar o resultado final
     res.json({
       error: false,
       colaboradores: listaColaboradores.map((c) => ({
@@ -171,6 +190,7 @@ router.get('/salao/:salaoId', async (req, res) => {
     });
   }
 });
+
 
 /*
   FAZER NA #01
@@ -223,20 +243,38 @@ router.put('/:colaboradorId', async (req, res) => {
 /*
   FAZER NA #01
 */
-router.delete('/vinculo/:id', async (req, res) => {
+router.delete('/vinculo/:colaboradorId', async (req, res) => {
   try {
-    await SalaoColaborador.findByIdAndUpdate(req.params.id, {
-      status: 'E'
-    });
+    const { colaboradorId } = req.params;
+
+    // Verificar se o relacionamento com o colaborador existe
+    const vinculo = await SalaoColaborador.findOne({ colaboradorId });
+    
+    if (!vinculo) {
+      return res.status(404).json({
+        error: true,
+        message: 'Vínculo não encontrado.',
+      });
+    }
+
+    // Atualizar o status do vínculo para 'E' (soft delete)
+    await SalaoColaborador.findOneAndUpdate(
+      { colaboradorId }, // Encontrar pelo colaboradorId
+      { status: 'E' } // Atualizar o status para 'E'
+    );
+
     res.json({
-      error: false
+      error: false,
+      message: 'Vínculo desativado com sucesso.'
     });
   } catch (err) {
-    res.json({
+    res.status(500).json({
       error: true,
-      message: err.message
+      message: err.message || 'Erro ao desativar vínculo.'
     });
   }
 });
+
+
 
 module.exports = router;

@@ -4,6 +4,7 @@ const Busboy = require('busboy');
 // const aws = require('../services/aws');
 const Servico = require('../models/servico');
 const Arquivos = require('../models/arquivos');
+const Salao = require('../models/salao');
 const moment = require('moment');
 const ColaboradorServico = require('../models/relationship/colaboradorServico');
 
@@ -52,6 +53,29 @@ router.post('/', async (req, res) => {
         return false;
       }
 
+      // Verificar o tipo de plano e a quantidade de serviços
+      const salao = await Salao.findById(req.body.salaoId);
+      const servicosCount = await Servico.countDocuments({
+        salaoId: req.body.salaoId
+      });
+      console.log(salao)
+      console.log(servicosCount)
+
+      const planoLimites = {
+        'básico': 4,
+        'gold': 7,
+        'teste': 10,
+        'premium': 10,
+        'master': 999,
+      };
+
+      if (servicosCount >= planoLimites[salao.plano]) {
+        return res.json({
+          error: true,
+          message: `O plano ${salao.plano} permite no máximo ${planoLimites[salao.plano]} serviços.`
+        });
+      }
+
       // CRIAR SERVIÇO
       let jsonServico = JSON.parse(req.body.servico);
       jsonServico.salaoId = req.body.salaoId;
@@ -78,6 +102,7 @@ router.post('/', async (req, res) => {
   });
   req.pipe(busboy);
 });
+
 
 /*
   FAZER NA #01
@@ -323,10 +348,14 @@ router.get('/colaborador/:colaboradorId', async (req, res) => {
 });
 router.get('/:servicoId/colaboradores', async (req, res) => {
   try {
-    const { servicoId } = req.params;
+    const {
+      servicoId
+    } = req.params;
 
     // Encontrar colaboradores que possuem o serviço
-    const colaboradores = await ColaboradorServico.find({ servicoId });
+    const colaboradores = await ColaboradorServico.find({
+      servicoId
+    });
 
     if (!colaboradores || colaboradores.length === 0) {
       return res.status(404).json({
@@ -340,7 +369,9 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
 
     // Buscar informações dos colaboradores
     const colaboradoresInfo = await Colaborador.find({
-      _id: { $in: colaboradorIds }
+      _id: {
+        $in: colaboradorIds
+      }
     });
 
     res.json({
