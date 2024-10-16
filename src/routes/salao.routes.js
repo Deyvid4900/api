@@ -5,7 +5,9 @@ const Servico = require('../models/servico');
 const Horario = require('../models/horario');
 const turf = require('turf');
 const util = require('../util');
-const { select } = require('underscore');
+const {
+  select
+} = require('underscore');
 
 // Criar um novo salão
 router.post('/', async (req, res) => {
@@ -16,21 +18,82 @@ router.post('/', async (req, res) => {
       .toLowerCase(); // Converte tudo para minúsculas
   };
 
+  var busboy = new Busboy({
+    headers: req.headers
+  });
+
   // Higieniza o nome antes de salvar
   req.body.nome = higienizarNome(req.body.nome);
 
-  try {
-    const salao = await new Salao(req.body).save();
-    res.json({
-      salao
-    });
-  } catch (err) {
-    res.json({
-      error: true,
-      message: err.message
-    });
-  }
+  busboy.on('finish', async () => {
+    try {
+      let errors = [];
+      let arquivos = {};
+
+      // Upload da capa
+      if (req.files && req.files.capa) {
+        const file = req.files.capa;
+        const nameParts = file.name.split('.');
+        const fileName = `${new Date().getTime()}-capa.${nameParts[nameParts.length - 1]}`;
+        const path = `saloes/${req.body.nome}/${fileName}`;
+
+        const response = await aws.uploadToS3(file, path);
+
+        if (response.error) {
+          errors.push({
+            error: true,
+            message: response.message
+          });
+        } else {
+          arquivos.capa = path; // Salvando o caminho da capa
+        }
+      }
+
+      // Upload da foto
+      if (req.files && req.files.foto) {
+        const file = req.files.foto;
+        const nameParts = file.name.split('.');
+        const fileName = `${new Date().getTime()}-foto.${nameParts[nameParts.length - 1]}`;
+        const path = `saloes/${req.body.nome}/${fileName}`;
+
+        const response = await aws.uploadToS3(file, path);
+
+        if (response.error) {
+          errors.push({
+            error: true,
+            message: response.message
+          });
+        } else {
+          arquivos.foto = path; // Salvando o caminho da foto
+        }
+      }
+
+      if (errors.length > 0) {
+        return res.json(errors[0]);
+      }
+
+      // Criar salão com os caminhos da capa e foto
+      const salao = await new Salao({
+        ...req.body,
+        capa: arquivos.capa,
+        foto: arquivos.foto,
+      }).save();
+
+      res.json({
+        salao,
+        message: 'Salão cadastrado com sucesso!',
+      });
+    } catch (err) {
+      res.json({
+        error: true,
+        message: err.message,
+      });
+    }
+  });
+
+  req.pipe(busboy);
 });
+
 
 
 // Listar todos os salões
@@ -147,9 +210,9 @@ router.post('/filter/nome/:nome', async (req, res) => {
     const horarios = await Horario.find({
       salaoId: salao._id, // Mudei para buscar pelo ID do salão
     }).select("inicio fim dias");
-    
+
     const isOpened = await util.isOpened(horarios);
-    
+
 
     res.json({
       error: false,

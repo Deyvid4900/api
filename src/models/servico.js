@@ -20,7 +20,6 @@ const servico = new Schema({
   },
   recorrencia: {
     type: Number,
-    required: true,
     default: 30,
   },
   descricao: {

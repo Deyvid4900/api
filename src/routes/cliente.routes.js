@@ -78,7 +78,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-
 router.post('/filter', async (req, res) => {
   try {
     const clientes = await Cliente.find(req.body.filters);
@@ -118,5 +117,36 @@ router.delete('/vinculo/:id', async (req, res) => {
     res.json({ error: true, message: err.message });
   }
 });
+
+// Rota para atualizar um cliente
+router.put('/:id', async (req, res) => {
+  const db = mongoose.connection;
+  const session = await db.startSession();
+  session.startTransaction();
+
+  try {
+    const { id } = req.params; // Obtém o ID do cliente a ser atualizado
+    const { cliente } = req.body; // Obtém os dados do cliente do corpo da requisição
+
+    // Verifica se o cliente existe
+    const existentClient = await Cliente.findById(id);
+    if (!existentClient) {
+      return res.status(404).json({ error: true, message: 'Cliente não encontrado!' });
+    }
+
+    // Atualiza os dados do cliente
+    await Cliente.findByIdAndUpdate(id, cliente, { session, new: true });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.json({ error: false, message: 'Cliente atualizado com sucesso!' });
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    res.json({ error: true, message: err.message });
+  }
+});
+
 
 module.exports = router;

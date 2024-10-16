@@ -103,7 +103,6 @@ router.post('/', async (req, res) => {
   req.pipe(busboy);
 });
 
-
 /*
   FAZER NA #01
 */
@@ -200,9 +199,6 @@ router.put('/:id', async (req, res) => {
 
   req.pipe(busboy);
 });
-
-
-
 
 /*
   FAZER NA #01
