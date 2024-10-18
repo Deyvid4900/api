@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Busboy = require('busboy');
 const aws = require('../services/aws');
+const Arquivos = require('../models/arquivos');
 const router = express.Router();
 const Colaborador = require('../models/colaborador');
 const Salao = require('../models/salao');
@@ -14,32 +15,60 @@ const moment = require('moment');
   FAZER NA #01
 */
 router.post('/', async (req, res) => {
-  const db = mongoose.connection;
-  const session = await db.startSession();
-  session.startTransaction();
-
   var busboy = new Busboy({
     headers: req.headers
   });
 
   busboy.on('finish', async () => {
     try {
-      const {
-        colaborador,
-        salaoId
-      } = req.body;
       let errors = [];
       let arquivos = [];
+      let colaborador = {
+        ...req.body
+      };
 
-      // Verificar se todos os campos obrigatórios estão presentes
-      if (!colaborador || !salaoId || !colaborador.nome || !colaborador.email || !colaborador.telefone || !colaborador.especialidades) {
+      // Verificar se há arquivos para upload
+      if (req.files && Object.keys(req.files).length > 0) {
+        for (let key of Object.keys(req.files)) {
+          const file = req.files[key];
+          const nameParts = file.name.split('.');
+          const fileName = `${new Date().getTime()}.${nameParts[nameParts.length - 1]}`;
+          const path = `colaboradores/${req.body.salaoId}/${fileName}`;
+
+          const response = await aws.uploadToS3(file, path);
+
+          if (response.error) {
+            errors.push({
+              error: true,
+              message: response.message.message
+            });
+          } else {
+            arquivos.push(path);
+            colaborador.foto = path; // Salvar o caminho da foto no colaborador
+          }
+        }
+      }
+
+      if (errors.length > 0) {
+        return res.json(errors[0]);
+      }
+
+      // Verificar campos obrigatórios
+      const {
+        salaoId,
+        nome,
+        email,
+        telefone,
+        especialidades
+      } = colaborador;
+      if (!salaoId || !nome || !email || !telefone || !especialidades || especialidades.length === 0) {
         return res.json({
           error: true,
           message: 'Todos os campos obrigatórios devem ser preenchidos.',
         });
       }
 
-      // Verificar o tipo de plano e a quantidade de colaboradores
+      // Verificar se o salão existe
       const salao = await Salao.findById(salaoId);
       if (!salao) {
         return res.json({
@@ -48,10 +77,10 @@ router.post('/', async (req, res) => {
         });
       }
 
+      // Verificar limites do plano
       const colaboradoresCount = await SalaoColaborador.countDocuments({
         salaoId
       });
-
       const planoLimites = {
         'básico': 1,
         'gold': 3,
@@ -67,15 +96,13 @@ router.post('/', async (req, res) => {
         });
       }
 
-      // Verificar se o colaborador já existe
+      // Verificar se o colaborador já está cadastrado
       const existentColaborador = await Colaborador.findOne({
         $or: [{
-            email: colaborador.email
-          },
-          {
-            telefone: colaborador.telefone
-          },
-        ],
+          email
+        }, {
+          telefone
+        }]
       });
 
       if (existentColaborador) {
@@ -85,52 +112,21 @@ router.post('/', async (req, res) => {
         });
       }
 
-      // Upload da foto de perfil para o S3
-      if (req.files && req.files.foto) {
-        const file = req.files.foto;
-        const nameParts = file.name.split('.');
-        const fileName = `${new Date().getTime()}.${nameParts[nameParts.length - 1]}`;
-        const path = `colaboradores/${salaoId}/${fileName}`;
-
-        const response = await aws.uploadToS3(file, path);
-
-        if (response.error) {
-          errors.push({
-            error: true,
-            message: response.message
-          });
-        } else {
-          colaborador.foto = path; // Salvando o caminho da foto no colaborador
-        }
-      }
-
-      if (errors.length > 0) {
-        return res.json(errors[0]);
-      }
-
       // Criar novo colaborador
-      const newColaborador = await new Colaborador({
-        ...colaborador,
-      }).save({
-        session
-      });
-
+      const newColaborador = await new Colaborador(colaborador).save();
       const colaboradorId = newColaborador._id;
 
-      // RELAÇÃO COM O SALÃO
+      // Relacionamento com o salão
       const existentRelationship = await SalaoColaborador.findOne({
         salaoId,
         colaboradorId
       });
-
       if (!existentRelationship) {
         await new SalaoColaborador({
           salaoId,
           colaboradorId,
-          status: colaborador.vinculo,
-        }).save({
-          session
-        });
+          status: colaborador.vinculo
+        }).save();
       }
 
       if (existentRelationship && existentRelationship.status === 'I') {
@@ -139,34 +135,33 @@ router.post('/', async (req, res) => {
           colaboradorId
         }, {
           status: 'A'
-        }, {
-          session
         });
       }
 
-      // RELAÇÃO COM OS SERVIÇOS / ESPECIALIDADES
+      // Relação com os serviços / especialidades
+      let especialidadesArray;
+      try {
+        especialidadesArray = JSON.parse(especialidades);
+      } catch (error) {
+        return res.json({
+          error: true,
+          message: 'O campo especialidades não está no formato correto.',
+        });
+      }
+
       await ColaboradorServico.insertMany(
-        colaborador.especialidades.map((servicoId) => ({
+        especialidadesArray.map((servicoId) => ({
           servicoId,
           colaboradorId,
         }))
       );
 
-      // Confirmar transação
-      await session.commitTransaction();
-      session.endSession();
-
       res.json({
         error: false,
         message: 'Colaborador cadastrado com sucesso!',
-        foto: colaborador.foto, // Retornando a URL da foto
+        foto: colaborador.foto || null, // Retorna a URL da foto se houver
       });
     } catch (err) {
-      // Abortar a transação em caso de erro
-      await session.abortTransaction();
-      session.endSession();
-
-      // Tratar erro e retornar mensagem
       res.status(500).json({
         error: true,
         message: err.message || 'Erro no servidor.',
@@ -208,21 +203,29 @@ router.get('/salao/:salaoId', async (req, res) => {
     // Buscar apenas colaboradores com status "A" (ativos)
     const colaboradores = await SalaoColaborador.find({
         salaoId,
-        status: 'A' // Filtrar apenas os colaboradores com status 'A'
+        status: 'A', // Filtrar apenas os colaboradores com status 'A'
       })
       .populate('colaboradorId')
       .select('colaboradorId dataCadastro status');
-
-    // Usar Promise.all para buscar todas as especialidades em paralelo
+    // Usar Promise.all para buscar todas as especialidades e foto em paralelo
     const listaColaboradores = await Promise.all(
       colaboradores.map(async (colaborador) => {
+        // Buscar especialidades do colaborador
         const especialidades = await ColaboradorServico.find({
           colaboradorId: colaborador.colaboradorId._id,
-        }).select('servicoId'); // Buscar apenas os IDs de serviço
+        }).select('servicoId');
 
+      
+        const arquivos = await Arquivos.find({
+          model: 'Colaborador',
+          referenciaId: colaborador.colaboradorId._id,
+        });
+        
         return {
           ...colaborador._doc,
           especialidades: especialidades.map((e) => e.servicoId),
+          foto: colaborador.colaboradorId.foto ? colaborador.colaboradorId.foto  : null,
+           // Retornar a URL da foto, se houver
         };
       })
     );
@@ -235,16 +238,18 @@ router.get('/salao/:salaoId', async (req, res) => {
         vinculoId: c._id,
         vinculo: c.status,
         especialidades: c.especialidades,
+        foto: c.foto, // Adicionar a foto no retorno
         dataCadastro: moment(c.dataCadastro).format('DD/MM/YYYY'),
       })),
     });
   } catch (err) {
     res.json({
       error: true,
-      message: err.message
+      message: err.message,
     });
   }
 });
+
 
 
 /*

@@ -33,4 +33,5 @@ const salaoSchema = new Schema({
 
 salaoSchema.index({ coordenadas: '2dsphere' });
 
+
 module.exports = mongoose.model('Salao', salaoSchema);

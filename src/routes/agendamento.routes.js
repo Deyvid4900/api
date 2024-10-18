@@ -58,6 +58,7 @@ router.post('/filter', async (req, res) => {
   }
 });
 
+
 router.post('/', async (req, res) => {
   try {
     const {
@@ -68,13 +69,9 @@ router.post('/', async (req, res) => {
       data
     } = req.body;
 
-    // Log da data recebida
-    console.log("corpo da requisição: " + data);
 
     // Parse da data de agendamento e conversão para o fuso horário local (America/Sao_Paulo)
     let parsedDate = moment.utc(data);
-    console.log("dataParseada (Local): " + parsedDate.format());
-
     if (!parsedDate.isValid()) {
       return res.json({
         error: true,
@@ -84,17 +81,14 @@ router.post('/', async (req, res) => {
 
     // Converta a data para o formato ISO
     const dataAgendamento = parsedDate.toISOString();
-    console.log("dataAgendamento (UTC): " + dataAgendamento);
 
     // Obtenha o dia da semana (0-6), onde 0 = domingo e 6 = sábado
     const diaDaSemana = parsedDate.day();
-    console.log("dia da semana: " + diaDaSemana);
 
     // Recupere os horários do salão
     const horarios = await Horario.find({
       salaoId
     });
-    console.log("horarios do Salao: ", horarios);
 
     if (!horarios.length) {
       return res.json({
@@ -104,7 +98,6 @@ router.post('/', async (req, res) => {
     }
 
     // Verifique se há horário disponível no dia e no horário selecionado
-    console.log(horarios)
     const horarioDisponivel = horarios.some(horario => {
       const inicioHorario = moment(horario.inicio).utc();
       const fimHorario = moment(horario.fim).utc();
@@ -116,10 +109,6 @@ router.post('/', async (req, res) => {
         return false; // Retorna false se o horário é inválido
       }
 
-      console.log("Início do horário (UTC): ", inicioHorario.format());
-      console.log("Fim do horário (UTC): ", fimHorario.format());
-      console.log("Horário do agendamento (UTC): ", agendamentoHorario.format());
-
       // Extrair apenas as horas e minutos para comparação
       const horaInicio = inicioHorario.hour() * 60 + inicioHorario.minute();
       const horaFim = fimHorario.hour() * 60 + fimHorario.minute();
@@ -129,18 +118,9 @@ router.post('/', async (req, res) => {
 
       const diaDisponivel = horario.dias.includes(diaDaSemana);
 
-      console.log("Horário dentro do intervalo: ", horaDentroIntervalo);
-      console.log("Dia disponível: ", diaDisponivel);
 
       return horaDentroIntervalo && diaDisponivel;
     });
-
-
-    // Resultado final
-    console.log("Disponibilidade do horário: ", horarioDisponivel);
-
-
-
 
 
     // Se não houver horário disponível
@@ -156,7 +136,6 @@ router.post('/', async (req, res) => {
     const salao = await Salao.findById(salaoId).select('_id');
     const servico = await Servico.findById(servicoId).select('preco titulo');
     const colaborador = await Colaborador.findById(colaboradorId).select('_id');
-    console.log(dataAgendamento)
     // CRIAR O AGENDAMENTO E AS TRANSAÇÕES
     let agendamento = {
       ...req.body,
@@ -279,7 +258,6 @@ router.post('/dias-disponiveis', async (req, res) => {
           /* VERIFICANDO OS HORÁRIOS DENTRO DO SLOT 
             QUE TENHAM A CONTINUIDADE NECESSÁRIA DO SERVIÇO
           */
-          console.log(horariosLivres); // Verificar o que está vindo em horariosLivres
 
           // Garantir que só tentamos mapear e filtrar se `slot` for um array
           horariosLivres = horariosLivres.map((slot) => {
@@ -288,7 +266,6 @@ router.post('/dias-disponiveis', async (req, res) => {
                 (horario, index) => slot.length - index >= servicoDuracaoSlots
               );
             } else {
-              console.error('Slot não é um array:', slot);
               return []; // Retorna uma array vazio para slots inválidos
             }
           });
@@ -310,7 +287,6 @@ router.post('/dias-disponiveis', async (req, res) => {
 
         if (totalColaboradores > 0) {
           colaboradores.push(Object.keys(todosHorariosDia));
-          console.log(todosHorariosDia);
           agenda.push({
             [moment(lastDay).format('YYYY-MM-DD')]: todosHorariosDia,
           });

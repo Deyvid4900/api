@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const Busboy = require('busboy');
-// const aws = require('../services/aws');
-const Servico = require('../models/servico');
 const Arquivos = require('../models/arquivos');
+const aws = require('../services/aws');
+const Servico = require('../models/servico');
 const Salao = require('../models/salao');
 const moment = require('moment');
 const ColaboradorServico = require('../models/relationship/colaboradorServico');
@@ -31,11 +31,10 @@ router.post('/', async (req, res) => {
           }`;
           const path = `servicos/${req.body.salaoId}/${fileName}`;
 
-          // const response = await aws.uploadToS3(
-          //   file,
-          //   path
-          //   //, acl = https://docs.aws.amazon.com/pt_br/AmazonS3/latest/dev/acl-overview.html
-          // );
+          const response = await aws.uploadToS3(
+            file,
+            path
+          );
 
           if (response.error) {
             errors.push({
@@ -58,8 +57,6 @@ router.post('/', async (req, res) => {
       const servicosCount = await Servico.countDocuments({
         salaoId: req.body.salaoId
       });
-      console.log(salao)
-      console.log(servicosCount)
 
       const planoLimites = {
         'básico': 4,
@@ -162,7 +159,6 @@ router.put('/:id', async (req, res) => {
       }
 
       // Atualizar o serviço
-      console.log(req.body.servicoId)
       const updatedServico = await Servico.findByIdAndUpdate(req.body.servicoId, jsonServico, {
         new: true
       });

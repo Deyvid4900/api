@@ -26,7 +26,6 @@ router.post('/', async (req, res) => {
     if (!existentClient) {
       const _id = mongoose.Types.ObjectId();
       const cliente = req.body.cliente;
-      console.log(cliente);
 
       newClient = await new Cliente({
         _id,

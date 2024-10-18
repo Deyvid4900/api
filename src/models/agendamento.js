@@ -42,9 +42,10 @@ const agendamento = new Schema({
   },
   pago: {
     type: String,
-    enum:['S','N'],
-    default:'N'
+    enum: ['S', 'N'],
+    default: 'N'
   },
 });
+
 
 module.exports = mongoose.model('Agendamento', agendamento);
