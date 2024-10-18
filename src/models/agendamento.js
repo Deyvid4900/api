@@ -47,5 +47,4 @@ const agendamento = new Schema({
   },
 });
 
-
 module.exports = mongoose.model('Agendamento', agendamento);
