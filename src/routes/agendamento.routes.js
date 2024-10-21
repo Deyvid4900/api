@@ -69,7 +69,7 @@ router.post('/', async (req, res) => {
       data
     } = req.body;
 
-
+    console.log(req.body)
     // Parse da data de agendamento e conversão para o fuso horário local (America/Sao_Paulo)
     let parsedDate = moment.utc(data);
     if (!parsedDate.isValid()) {
@@ -96,7 +96,7 @@ router.post('/', async (req, res) => {
         message: "Nenhum horário disponível para o salão."
       });
     }
-
+    console.log(horarios)
     // Verifique se há horário disponível no dia e no horário selecionado
     const horarioDisponivel = horarios.some(horario => {
       const inicioHorario = moment(horario.inicio).utc();
@@ -127,10 +127,10 @@ router.post('/', async (req, res) => {
     if (!horarioDisponivel) {
       return res.json({
         error: true,
-        message: "Este horário não está disponível para agendamentos."
+        message: `Este horário não está disponível para agendamentos.`
       });
     }
-
+    // ${new Date().toISOString()}
     // Prosseguir com a criação do agendamento
     const cliente = await Cliente.findById(clienteId).select('nome endereco');
     const salao = await Salao.findById(salaoId).select('_id');
@@ -147,8 +147,8 @@ router.post('/', async (req, res) => {
 
     res.json({
       error: false,
-      message: "Agendamento criado com sucesso."
-    });
+      message: `Agendamento criado com sucesso `
+  });
   } catch (err) {
     res.json({
       error: true,

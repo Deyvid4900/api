@@ -12,13 +12,19 @@ router.post('/', async (req, res) => {
   session.startTransaction();
 
   try {
-    const { cliente, salaoId } = req.body;
+    const {
+      cliente,
+      salaoId
+    } = req.body;
     let newClient = null;
 
     const existentClient = await Cliente.findOne({
-      $or: [
-        { email: cliente.email },
-        { telefone: cliente.telefone },
+      $or: [{
+          email: cliente.email
+        },
+        {
+          telefone: cliente.telefone
+        },
         //{ cpf: cliente.cpf },
       ],
     });
@@ -30,7 +36,9 @@ router.post('/', async (req, res) => {
       newClient = await new Cliente({
         _id,
         ...cliente,
-      }).save({ session });
+      }).save({
+        session
+      });
     }
 
     const clienteId = existentClient ? existentClient._id : newClient._id;
@@ -44,18 +52,20 @@ router.post('/', async (req, res) => {
       await new SalaoCliente({
         salaoId,
         clienteId,
-      }).save({ session });
+      }).save({
+        session
+      });
     }
 
     if (existentRelationship && existentRelationship.status === 'I') {
-      await SalaoCliente.findOneAndUpdate(
-        {
-          salaoId,
-          clienteId,
-        },
-        { status: 'A' },
-        { session }
-      );
+      await SalaoCliente.findOneAndUpdate({
+        salaoId,
+        clienteId,
+      }, {
+        status: 'A'
+      }, {
+        session
+      });
     }
 
     await session.commitTransaction();
@@ -66,32 +76,48 @@ router.post('/', async (req, res) => {
       existentRelationship.status === 'A' &&
       existentClient
     ) {
-      res.json({ error: true, message: 'Cliente já cadastrado!' });
+      res.json({
+        error: true,
+        message: 'Cliente já cadastrado!'
+      });
     } else {
-      res.json({ error: false, clienteId });
+      res.json({
+        error: false,
+        message: 'Cliente cadastrado com sucesso!',
+        clienteId
+      });
     }
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    res.json({ error: true, message: err.message });
+    res.json({
+      error: true,
+      message: err.message
+    });
   }
 });
 
 router.post('/filter', async (req, res) => {
   try {
     const clientes = await Cliente.find(req.body.filters);
-    res.json({ error: false, clientes });
+    res.json({
+      error: false,
+      clientes
+    });
   } catch (err) {
-    res.json({ error: true, message: err.message });
+    res.json({
+      error: true,
+      message: err.message
+    });
   }
 });
 
 router.get('/salao/:salaoId', async (req, res) => {
   try {
     const clientes = await SalaoCliente.find({
-      salaoId: req.params.salaoId,
-      status: 'A',
-    })
+        salaoId: req.params.salaoId,
+        status: 'A',
+      })
       .populate('clienteId')
       .select('clienteId');
 
@@ -104,16 +130,27 @@ router.get('/salao/:salaoId', async (req, res) => {
       })),
     });
   } catch (err) {
-    res.json({ error: true, message: err.message });
+    res.json({
+      error: true,
+      message: err.message
+    });
   }
 });
 
 router.delete('/vinculo/:id', async (req, res) => {
   try {
-    await SalaoCliente.findByIdAndUpdate(req.params.id, { status: 'I' });
-    res.json({ error: false });
+    await SalaoCliente.findByIdAndUpdate(req.params.id, {
+      status: 'I'
+    });
+    res.json({
+      error: false,
+      message: 'Cliente deletado com sucesso!'
+    });
   } catch (err) {
-    res.json({ error: true, message: err.message });
+    res.json({
+      error: true,
+      message: err.message
+    });
   }
 });
 
@@ -124,26 +161,42 @@ router.put('/:id', async (req, res) => {
   session.startTransaction();
 
   try {
-    const { id } = req.params; // Obtém o ID do cliente a ser atualizado
-    const { cliente } = req.body; // Obtém os dados do cliente do corpo da requisição
+    const {
+      id
+    } = req.params; // Obtém o ID do cliente a ser atualizado
+    const {
+      cliente
+    } = req.body; // Obtém os dados do cliente do corpo da requisição
 
     // Verifica se o cliente existe
     const existentClient = await Cliente.findById(id);
     if (!existentClient) {
-      return res.status(404).json({ error: true, message: 'Cliente não encontrado!' });
+      return res.status(404).json({
+        error: true,
+        message: 'Cliente não encontrado!'
+      });
     }
 
     // Atualiza os dados do cliente
-    await Cliente.findByIdAndUpdate(id, cliente, { session, new: true });
+    await Cliente.findByIdAndUpdate(id, cliente, {
+      session,
+      new: true
+    });
 
     await session.commitTransaction();
     session.endSession();
 
-    res.json({ error: false, message: 'Cliente atualizado com sucesso!' });
+    res.json({
+      error: false,
+      message: 'Cliente atualizado com sucesso!'
+    });
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    res.json({ error: true, message: err.message });
+    res.json({
+      error: true,
+      message: err.message
+    });
   }
 });
 

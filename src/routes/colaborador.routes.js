@@ -290,7 +290,7 @@ router.put('/:colaboradorId', async (req, res) => {
     }
 
     res.json({
-      error: false
+      error: false, message: 'Colaborador atualizado com sucesso!'
     });
   } catch (err) {
     res.json({

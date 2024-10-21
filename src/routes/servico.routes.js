@@ -88,7 +88,8 @@ router.post('/', async (req, res) => {
 
       res.json({
         error: false,
-        arquivos
+        arquivos,
+        message: 'Serviço criado com sucesso!'
       });
     } catch (err) {
       res.json({
@@ -270,7 +271,7 @@ router.delete('/:id', async (req, res) => {
       status: 'E'
     });
     res.json({
-      error: false
+      error: false,message: 'Serivço deletado com sucesso!'
     });
   } catch (err) {
     res.json({
