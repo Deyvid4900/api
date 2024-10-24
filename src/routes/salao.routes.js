@@ -46,7 +46,7 @@ router.post('/login', async (req, res) => {
       id: salao._id,
       email: salao.email
     }, JWT_SECRET, {
-      expiresIn: '1h', // Token expira em 1 hora
+      expiresIn: '7d', // Token expira em 1 hora
     });
     // 4. Retornar o token, email e id do salão
     return res.json({

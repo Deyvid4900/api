@@ -148,7 +148,7 @@ router.post('/', async (req, res) => {
     res.json({
       error: false,
       message: `Agendamento criado com sucesso `
-  });
+    });
   } catch (err) {
     res.json({
       error: true,
@@ -166,13 +166,20 @@ router.post('/dias-disponiveis', async (req, res) => {
       data
     } = req.body;
 
+    // console.log('Dados recebidos:', req.body);// Segunda-feira à meia-noite UTC
+    const startOfToday = moment.utc().startOf('week').toDate(); // Início do dia atual
+    const endOfNext7Days = moment.utc().add(7, 'days').endOf('week').toDate();
+
     const horarios = await Horario.find({
-      salaoId
+      salaoId,
+      inicio: { $gte: startOfToday }, // Verifica horários com início >= início de hoje
+      fim: { $lte: endOfNext7Days } 
     });
+    console.log(horarios)
 
     const servico = await Servico.findById(servicoId).select('duracao');
+    // console.log('Serviço encontrado:', servico);
     let colaboradores = [];
-
     let agenda = [];
     let lastDay = moment(data);
 
@@ -190,9 +197,11 @@ router.post('/dias-disponiveis', async (req, res) => {
     for (let i = 0; i <= 365 && agenda.length <= 7; i++) {
       const espacosValidos = horarios.filter((h) => {
         // VERIFICAR DIA DA SEMANA
+        // console.log("dias " + h.dias)
         const diaSemanaDisponivel = h.dias.includes(moment(lastDay).day());
-
+        
         // VERIFICAR ESPECIALIDADE DISPONÍVEL
+        // console.log("especialidades "+h.especialidades)
         const servicosDisponiveis = h.especialidades.includes(servicoId);
 
         return diaSemanaDisponivel && servicosDisponiveis;
@@ -295,12 +304,13 @@ router.post('/dias-disponiveis', async (req, res) => {
 
       lastDay = moment(lastDay).add(1, 'day');
     }
-
+    console.log(colaboradores)
     colaboradores = await Colaborador.find({
       _id: {
         $in: _.uniq(colaboradores.flat())
       },
     }).select('nome foto');
+
 
     colaboradores = colaboradores.map((c) => ({
       ...c._doc,
@@ -322,9 +332,7 @@ router.post('/dias-disponiveis', async (req, res) => {
 
 router.get('/agendamentos/:clienteId', async (req, res) => {
   try {
-    const {
-      clienteId
-    } = req.params;
+    const { clienteId } = req.params;
 
     // Verifique se o cliente existe
     const cliente = await Cliente.findById(clienteId);
@@ -335,23 +343,28 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
       });
     }
 
-    // Buscar os agendamentos para o cliente
+    // Obter a data e hora atuais
+    const now = new Date();
+
+    // Buscar os agendamentos futuros para o cliente
     const agendamentos = await Agendamento.find({
-        clienteId
-      })
-      .populate([{
-          path: 'servicoId',
-          select: 'titulo duracao'
-        },
-        {
-          path: 'colaboradorId',
-          select: 'nome'
-        },
-        {
-          path: 'salaoId',
-          select: 'nome'
-        }
-      ]);
+      clienteId,
+      data: { $gte: now } // Filtra agendamentos cuja data é maior ou igual à data atual
+    })
+    .populate([
+      {
+        path: 'servicoId',
+        select: 'titulo duracao'
+      },
+      {
+        path: 'colaboradorId',
+        select: 'nome'
+      },
+      {
+        path: 'salaoId',
+        select: 'nome telefone'
+      }
+    ]);
 
     res.json({
       error: false,
@@ -365,6 +378,7 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
     });
   }
 });
+
 
 
 module.exports = router;

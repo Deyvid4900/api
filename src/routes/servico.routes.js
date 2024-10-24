@@ -7,6 +7,7 @@ const Servico = require('../models/servico');
 const Salao = require('../models/salao');
 const moment = require('moment');
 const ColaboradorServico = require('../models/relationship/colaboradorServico');
+const SalaoColaborador = require('../models/relationship/salaoColaborador')
 
 const Colaborador = require('../models/colaborador');
 /*
@@ -52,7 +53,7 @@ router.post('/', async (req, res) => {
         return false;
       }
 
-      // Verificar o tipo de plano e a quantidade de serviços
+      
       const salao = await Salao.findById(req.body.salaoId);
       const servicosCount = await Servico.countDocuments({
         salaoId: req.body.salaoId
@@ -73,12 +74,12 @@ router.post('/', async (req, res) => {
         });
       }
 
-      // CRIAR SERVIÇO
+      
       let jsonServico = JSON.parse(req.body.servico);
       jsonServico.salaoId = req.body.salaoId;
       const servico = await new Servico(jsonServico).save();
 
-      // CRIAR ARQUIVO
+      
       arquivos = arquivos.map((arquivo) => ({
         referenciaId: servico._id,
         model: 'Servico',
@@ -114,7 +115,7 @@ router.put('/:id', async (req, res) => {
       let errors = [];
       let arquivos = [];
 
-      // Verifica se existem arquivos na requisição
+      
       if (req.files && Object.keys(req.files).length > 0) {
         for (let key of Object.keys(req.files)) {
           const file = req.files[key];
@@ -123,24 +124,24 @@ router.put('/:id', async (req, res) => {
           const fileName = `${new Date().getTime()}.${nameParts[nameParts.length - 1]}`;
           const path = `servicos/${req.body.salaoId}/${fileName}`;
 
-          // Implementar upload para S3 aqui
-          // const response = await aws.uploadToS3(file, path);
+          
+          
 
-          // Exemplo: se o upload falhar
-          // if (response.error) {
-          //   errors.push({ error: true, message: response.message });
-          // } else {
-          //   arquivos.push(path);
-          // }
+          
+          
+          
+          
+          
+          
         }
       }
 
-      // Se houver erros com os arquivos, retornar o primeiro erro
+      
       if (errors.length > 0) {
         return res.status(400).json(errors[0]);
       }
 
-      // Verificar se o campo 'servico' foi enviado
+      
       if (!req.body.servico) {
         return res.status(400).json({
           error: true,
@@ -148,7 +149,7 @@ router.put('/:id', async (req, res) => {
         });
       }
 
-      // Tentar fazer o parsing do JSON
+      
       let jsonServico;
       try {
         jsonServico = JSON.parse(req.body.servico);
@@ -159,7 +160,7 @@ router.put('/:id', async (req, res) => {
         });
       }
 
-      // Atualizar o serviço
+      
       const updatedServico = await Servico.findByIdAndUpdate(req.body.servicoId, jsonServico, {
         new: true
       });
@@ -171,7 +172,7 @@ router.put('/:id', async (req, res) => {
         });
       }
 
-      // Se houver arquivos, inserir registros de arquivos no banco de dados
+      
       if (arquivos.length > 0) {
         const arquivosDocs = arquivos.map(arquivo => ({
           referenciaId: req.params.id,
@@ -186,7 +187,7 @@ router.put('/:id', async (req, res) => {
         message: 'Serviço atualizado com sucesso!'
       });
     } catch (err) {
-      console.error(err); // Logar o erro no servidor
+      console.error(err); 
       return res.status(500).json({
         error: true,
         message: err.message
@@ -242,10 +243,10 @@ router.post('/remove-arquivo', async (req, res) => {
       arquivo
     } = req.body;
 
-    // EXCLUIR DA AWS
-    // await aws.deleteFileS3(arquivo);
+    
+    
 
-    // EXCLUIR DO BANCO DE DADOS
+    
     await Arquivos.findOneAndDelete({
       arquivo,
     });
@@ -271,7 +272,8 @@ router.delete('/:id', async (req, res) => {
       status: 'E'
     });
     res.json({
-      error: false,message: 'Serivço deletado com sucesso!'
+      error: false,
+      message: 'Serivço deletado com sucesso!'
     });
   } catch (err) {
     res.json({
@@ -288,7 +290,7 @@ router.get('/colaborador/:colaboradorId', async (req, res) => {
       colaboradorId
     } = req.params;
 
-    // Encontrar o colaborador e suas especialidades
+    
     const colaboradorServico = await ColaboradorServico.find({
       colaboradorId,
     });
@@ -300,10 +302,10 @@ router.get('/colaborador/:colaboradorId', async (req, res) => {
       });
     }
 
-    // Obter os IDs dos serviços
+    
     const especialidadesIds = colaboradorServico.map(e => e.servicoId);
 
-    // Buscar os serviços correspondentes às especialidades
+    
     const servicosColaborador = await Servico.find({
       _id: {
         $in: especialidadesIds
@@ -313,7 +315,7 @@ router.get('/colaborador/:colaboradorId', async (req, res) => {
       },
     });
 
-    // Buscar arquivos relacionados a cada serviço
+    
     const servicosComArquivos = await Promise.all(
       servicosColaborador.map(async (servico) => {
         const arquivos = await Arquivos.find({
@@ -344,9 +346,14 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
     const {
       servicoId
     } = req.params;
+    const {
+      salaoId
+    } = req.body;
+    
+    console.log(req.body)
 
-    // Encontrar colaboradores que possuem o serviço
-    const colaboradores = await ColaboradorServico.find({
+    
+    const colaboradores = await ColaboradorServico.find({ 
       servicoId
     });
 
@@ -357,19 +364,36 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
       });
     }
 
-    // Obter os IDs dos colaboradores
+    
     const colaboradorIds = colaboradores.map(c => c.colaboradorId);
 
-    // Buscar informações dos colaboradores
-    const colaboradoresInfo = await Colaborador.find({
+    
+    const colaboradoresInfo = await Colaborador.find({ 
       _id: {
         $in: colaboradorIds
       }
     });
+    console.log(colaboradoresInfo)
+    
+    const salaoColaboradores = await SalaoColaborador.find({status:'A'});
+    console.log(salaoColaboradores)
+    
+    const colaboradoresAtivos = colaboradoresInfo.filter(colab =>
+      salaoColaboradores.some(salaoColab =>
+        salaoColab.colaboradorId.toString() === colab._id.toString()
+      )
+    );
+
+    if (colaboradoresAtivos.length === 0) {
+      return res.status(404).json({
+        error: true,
+        message: 'Nenhum colaborador ativo encontrado para este serviço.'
+      });
+    }
 
     res.json({
       error: false,
-      colaboradores: colaboradoresInfo,
+      colaboradores: colaboradoresAtivos,
     });
   } catch (err) {
     res.status(500).json({
@@ -378,6 +402,7 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
     });
   }
 });
+
 
 
 
