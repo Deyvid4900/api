@@ -6,14 +6,12 @@ const Cliente = require('../models/cliente');
 const Salao = require('../models/salao');
 const Servico = require('../models/servico');
 const Colaborador = require('../models/colaborador');
-
 const moment = require('moment-timezone');
 const mongoose = require('mongoose');
 const _ = require('lodash');
-
-// const pagarme = require('../services/pagarme');
 const keys = require('../data/keys.json');
 const util = require('../util');
+// const pagarme = require('../services/pagarme');
 
 router.post('/filter', async (req, res) => {
   try {
@@ -69,18 +67,23 @@ router.post('/', async (req, res) => {
       data
     } = req.body;
 
-    console.log(req.body)
+    // Exibe a data recebida para depuração
+    console.log("Data recebida:", data);
+
     // Parse da data de agendamento e conversão para o fuso horário local (America/Sao_Paulo)
-    let parsedDate = moment.utc(data);
+    let parsedDate = moment.tz(data, 'America/Sao_Paulo');
+
+    // Valida se a data é válida
     if (!parsedDate.isValid()) {
+      console.log("Data inválida:", data);
       return res.json({
         error: true,
         message: "Data de agendamento inválida."
       });
     }
 
-    // Converta a data para o formato ISO
-    const dataAgendamento = parsedDate.toISOString();
+    // Converta a data para UTC antes de salvar no banco de dados
+    const dataAgendamento = parsedDate.utc().toISOString();
 
     // Obtenha o dia da semana (0-6), onde 0 = domingo e 6 = sábado
     const diaDaSemana = parsedDate.day();
@@ -89,36 +92,30 @@ router.post('/', async (req, res) => {
     const horarios = await Horario.find({
       salaoId
     });
-
     if (!horarios.length) {
       return res.json({
         error: true,
         message: "Nenhum horário disponível para o salão."
       });
     }
-    console.log(horarios)
+
     // Verifique se há horário disponível no dia e no horário selecionado
     const horarioDisponivel = horarios.some(horario => {
-      const inicioHorario = moment(horario.inicio).utc();
-      const fimHorario = moment(horario.fim).utc();
-      const agendamentoHorario = moment(parsedDate).utc(); // Certifique-se de que parsedDate está em UTC
+      const inicioHorario = moment(horario.inicio).tz('America/Sao_Paulo');
+      const fimHorario = moment(horario.fim).tz('America/Sao_Paulo');
+      const agendamentoHorario = moment(parsedDate).tz('America/Sao_Paulo');
 
-      // Verifique se o horário de fim é posterior ao horário de início
+      // Verificar se o horário de fim é antes do início (caso inválido)
       if (fimHorario.isBefore(inicioHorario)) {
         console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
-        return false; // Retorna false se o horário é inválido
+        return false;
       }
 
-      // Extrair apenas as horas e minutos para comparação
-      const horaInicio = inicioHorario.hour() * 60 + inicioHorario.minute();
-      const horaFim = fimHorario.hour() * 60 + fimHorario.minute();
-      const horaAgendamento = agendamentoHorario.hour() * 60 + agendamentoHorario.minute();
-
-      const horaDentroIntervalo = horaAgendamento >= horaInicio && horaAgendamento < horaFim;
-
+      // Verificar se o horário de agendamento está dentro do intervalo (início <= agendamento < fim)
+      const horaDentroIntervalo = agendamentoHorario.isBetween(inicioHorario, fimHorario, null, '[)');
       const diaDisponivel = horario.dias.includes(diaDaSemana);
 
-
+      // Retornar verdadeiro se o horário está dentro do intervalo e o dia é permitido
       return horaDentroIntervalo && diaDisponivel;
     });
 
@@ -130,16 +127,33 @@ router.post('/', async (req, res) => {
         message: `Este horário não está disponível para agendamentos.`
       });
     }
-    // ${new Date().toISOString()}
+
+    // Verifique se já existe um agendamento para o colaborador e data
+    const agendamentoExistente = await Agendamento.findOne({
+      colaboradorId,
+      data: {
+        $gte: moment(parsedDate).startOf('minute').utc().toISOString(),
+        $lt: moment(parsedDate).add(1, 'hour').startOf('minute').utc().toISOString()
+      }
+    });
+
+    if (agendamentoExistente) {
+      return res.json({
+        error: true,
+        message: `Este horário já está reservado para outro cliente.`
+      });
+    }
+
     // Prosseguir com a criação do agendamento
     const cliente = await Cliente.findById(clienteId).select('nome endereco');
     const salao = await Salao.findById(salaoId).select('_id');
     const servico = await Servico.findById(servicoId).select('preco titulo');
     const colaborador = await Colaborador.findById(colaboradorId).select('_id');
+
     // CRIAR O AGENDAMENTO E AS TRANSAÇÕES
     let agendamento = {
       ...req.body,
-      data: dataAgendamento, // Mantendo o formato ISO (UTC)
+      data: dataAgendamento, // Mantendo a data em UTC no banco de dados
       valor: servico.preco,
     };
 
@@ -147,7 +161,7 @@ router.post('/', async (req, res) => {
 
     res.json({
       error: false,
-      message: `Agendamento criado com sucesso `
+      message: `Agendamento criado com sucesso`
     });
   } catch (err) {
     res.json({
@@ -158,35 +172,48 @@ router.post('/', async (req, res) => {
 });
 
 
+
+
+
 router.post('/dias-disponiveis', async (req, res) => {
   try {
     const {
+      colaboradorId, // Recebe colaboradorId no request
       salaoId,
       servicoId,
-      data
+      data = moment().utcOffset()
     } = req.body;
 
-    // console.log('Dados recebidos:', req.body);// Segunda-feira à meia-noite UTC
-    const startOfToday = moment.utc().startOf('week').toDate(); // Início do dia atual
+    const startOfToday = moment.utc().startOf('week').toDate();
     const endOfNext7Days = moment.utc().add(7, 'days').endOf('week').toDate();
 
     const horarios = await Horario.find({
       salaoId,
-      inicio: { $gte: startOfToday }, // Verifica horários com início >= início de hoje
-      fim: { $lte: endOfNext7Days } 
+      inicio: {
+        $gte: startOfToday
+      },
+      fim: {
+        $lte: endOfNext7Days
+      }
     });
-    console.log(horarios)
 
     const servico = await Servico.findById(servicoId).select('duracao');
-    // console.log('Serviço encontrado:', servico);
-    let colaboradores = [];
-    let agenda = [];
-    let lastDay = moment(data);
 
-    // DURAÇÃO DO SERVIÇO
-    const servicoDuracao = util.hourToMinutes(
-      moment(servico.duracao).format('HH:mm')
-    );
+    // Buscando os agendamentos já existentes para o salão e serviço
+    const agendamentos = await Agendamento.find({
+      salaoId,
+      servicoId,
+      data: {
+        $gte: moment().startOf('day').toDate(),
+        $lte: moment().add(7, 'days').endOf('day').toDate()
+      }
+    });
+
+    let agenda = [];
+    let colaboradores = [];
+    let lastDay = moment(data).toDate();
+
+    const servicoDuracao = util.hourToMinutes(moment(servico.duracao).format('HH:mm'));
     const servicoDuracaoSlots = util.sliceMinutes(
       moment(servico.duracao),
       moment(servico.duracao).add(servicoDuracao, 'minutes'),
@@ -196,121 +223,74 @@ router.post('/dias-disponiveis', async (req, res) => {
 
     for (let i = 0; i <= 365 && agenda.length <= 7; i++) {
       const espacosValidos = horarios.filter((h) => {
-        // VERIFICAR DIA DA SEMANA
-        // console.log("dias " + h.dias)
         const diaSemanaDisponivel = h.dias.includes(moment(lastDay).day());
-        
-        // VERIFICAR ESPECIALIDADE DISPONÍVEL
-        // console.log("especialidades "+h.especialidades)
         const servicosDisponiveis = h.especialidades.includes(servicoId);
-
         return diaSemanaDisponivel && servicosDisponiveis;
       });
 
       if (espacosValidos.length > 0) {
-        // TODOS OS HORÁRIOS DISPONÍVEIS DAQUELE DIA
         let todosHorariosDia = {};
+
+        // Filtra horários especificamente para o colaborador enviado no request
         for (let espaco of espacosValidos) {
           for (let colaborador of espaco.colaboradores) {
+            if (colaborador._id.toString() !== colaboradorId) continue; // Filtra colaborador
+
             if (!todosHorariosDia[colaborador._id]) {
               todosHorariosDia[colaborador._id] = [];
             }
+
+            // Gerar os blocos de horários com base no início e fim
+            const slots = util.sliceMinutes(
+              util.mergeDateTime(lastDay, espaco.inicio),
+              util.mergeDateTime(lastDay, espaco.fim),
+              util.SLOT_DURATION
+            );
+
+            const agendamentosDia = agendamentos.filter(agendamento => {
+              const agendamentoData = moment(agendamento.data).utc();
+              return agendamentoData.isSame(lastDay, 'day');
+            });
+
+            // Verificar se os slots se sobrepõem com os agendamentos já existentes
+            const slotsDisponiveis = slots.filter((slot) => {
+              const slotInicio = moment(slot, "HH:mm");
+              const slotFim = moment(slot, "HH:mm").add(servicoDuracao, 'minutes');
+
+              return !agendamentosDia.some(agendamento => {
+                const agendamentoInicio = moment(agendamento.data);
+                const agendamentoFim = moment(agendamento.data).add(servicoDuracao, 'minutes');
+
+                return (
+                  (slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio))
+                );
+              });
+            });
+
             todosHorariosDia[colaborador._id] = [
               ...todosHorariosDia[colaborador._id],
-              ...util.sliceMinutes(
-                util.mergeDateTime(lastDay, espaco.inicio),
-                util.mergeDateTime(lastDay, espaco.fim),
-                util.SLOT_DURATION
-              ),
+              ...slotsDisponiveis.map((slot, index) => ({
+                id: `${index}`,
+                available: true,
+                time: moment(slot, "HH:mm").add(3, 'hours').format("HH:mm"), // Adiciona 3 horas ao slot
+              }))
             ];
           }
         }
 
-        // SE TODOS OS ESPECIALISTAS DISPONÍVEIS ESTIVEREM OCUPADOS NO HORÁRIO, REMOVER
-        for (let colaboradorKey of Object.keys(todosHorariosDia)) {
-          // LER AGENDAMENTOS DAQUELE ESPECIALISTA NAQUELE DIA
-          const agendamentos = await Agendamento.find({
-            colaboradorId: colaboradorKey,
-            data: {
-              $gte: moment(lastDay).startOf('day'),
-              $lte: moment(lastDay).endOf('day'),
-            },
-          }).select('data -_id');
-
-          // RECUPERANDO HORÁRIOS OCUPADOS
-          let horariosOcupado = agendamentos.map((a) => ({
-            inicio: moment(a.data),
-            fim: moment(a.data).add(servicoDuracao, 'minutes'),
-          }));
-
-          horariosOcupado = horariosOcupado
-            .map((h) =>
-              util.sliceMinutes(h.inicio, h.fim, util.SLOT_DURATION, false)
-            )
-            .flat();
-
-          // REMOVENDO TODOS OS HORÁRIOS QUE ESTÃO OCUPADOS
-          let horariosLivres = util.splitByValue(
-            _.uniq(
-              todosHorariosDia[colaboradorKey].map((h) => {
-                return horariosOcupado.includes(h) ? '-' : h;
-              })
-            ),
-            '-'
-          );
-
-          // VERIFICANDO SE NOS HORÁRIOS CONTINUOS EXISTE SPAÇO SUFICIENTE NO SLOT
-          horariosLivres = horariosLivres
-            .filter((h) => h.length >= servicoDuracaoSlots)
-            .flat();
-
-          /* VERIFICANDO OS HORÁRIOS DENTRO DO SLOT 
-            QUE TENHAM A CONTINUIDADE NECESSÁRIA DO SERVIÇO
-          */
-
-          // Garantir que só tentamos mapear e filtrar se `slot` for um array
-          horariosLivres = horariosLivres.map((slot) => {
-            if (Array.isArray(slot)) {
-              return slot.filter(
-                (horario, index) => slot.length - index >= servicoDuracaoSlots
-              );
-            } else {
-              return []; // Retorna uma array vazio para slots inválidos
-            }
-          });
-
-
-          // SEPARANDO 2 EM 2
-          horariosLivres = _.chunk(horariosLivres, 2);
-
-          // REMOVENDO O COLABORADOR DO DIA, CASO NÃO TENHA ESPAÇOS NA AGENDA
-          if (horariosLivres.length === 0) {
-            todosHorariosDia = _.omit(todosHorariosDia, colaboradorKey);
-          } else {
-            todosHorariosDia[colaboradorKey] = horariosLivres;
-          }
-        }
-
-        // VERIFICANDO SE TEM ESPECIALISTA COMA AGENDA NAQUELE DIA
-        const totalColaboradores = Object.keys(todosHorariosDia).length;
-
-        if (totalColaboradores > 0) {
-          colaboradores.push(Object.keys(todosHorariosDia));
+        if (Object.keys(todosHorariosDia).length > 0) {
           agenda.push({
-            [moment(lastDay).format('YYYY-MM-DD')]: todosHorariosDia,
+            [moment(lastDay).format('YYYY-MM-DD')]: todosHorariosDia
           });
         }
       }
 
       lastDay = moment(lastDay).add(1, 'day');
     }
-    console.log(colaboradores)
-    colaboradores = await Colaborador.find({
-      _id: {
-        $in: _.uniq(colaboradores.flat())
-      },
-    }).select('nome foto');
 
+    colaboradores = await Colaborador.find({
+      _id: colaboradorId, // Busca colaborador específico
+    }).select('nome foto');
 
     colaboradores = colaboradores.map((c) => ({
       ...c._doc,
@@ -320,19 +300,24 @@ router.post('/dias-disponiveis', async (req, res) => {
     res.json({
       error: false,
       colaboradores,
-      agenda
+      agenda,
     });
   } catch (err) {
     res.json({
       error: true,
-      message: err.message
+      message: err.message,
     });
   }
 });
 
+
+
+
 router.get('/agendamentos/:clienteId', async (req, res) => {
   try {
-    const { clienteId } = req.params;
+    const {
+      clienteId
+    } = req.params;
 
     // Verifique se o cliente existe
     const cliente = await Cliente.findById(clienteId);
@@ -348,23 +333,24 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
 
     // Buscar os agendamentos futuros para o cliente
     const agendamentos = await Agendamento.find({
-      clienteId,
-      data: { $gte: now } // Filtra agendamentos cuja data é maior ou igual à data atual
-    })
-    .populate([
-      {
-        path: 'servicoId',
-        select: 'titulo duracao'
-      },
-      {
-        path: 'colaboradorId',
-        select: 'nome'
-      },
-      {
-        path: 'salaoId',
-        select: 'nome telefone'
-      }
-    ]);
+        clienteId,
+        data: {
+          $gte: now
+        } // Filtra agendamentos cuja data é maior ou igual à data atual
+      })
+      .populate([{
+          path: 'servicoId',
+          select: 'titulo duracao'
+        },
+        {
+          path: 'colaboradorId',
+          select: 'nome'
+        },
+        {
+          path: 'salaoId',
+          select: 'nome telefone'
+        }
+      ]);
 
     res.json({
       error: false,
