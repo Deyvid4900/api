@@ -272,7 +272,7 @@ router.post('/dias-disponiveis', async (req, res) => {
               ...slotsDisponiveis.map((slot, index) => ({
                 id: `${index}`,
                 available: true,
-                time: moment(slot, "HH:mm").add(3, 'hours').format("HH:mm"), // Adiciona 3 horas ao slot
+                time: moment(slot, "HH:mm").format("HH:mm"), // Adiciona 3 horas ao slot
               }))
             ];
           }
