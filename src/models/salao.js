@@ -28,6 +28,11 @@ const salaoSchema = new Schema({
     type: String,
     enum: ['básico', 'gold', 'premium', 'teste',"master"], // Define os valores permitidos
     required: true // Campo obrigatório
+  },
+  cor:{
+    type: String,
+    enum: ['azul', 'laranja', 'verde', "dourado"], // Define os valores permitidos
+    required: false // Campo obrigatório
   }
 });
 

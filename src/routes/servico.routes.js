@@ -350,7 +350,7 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
       salaoId
     } = req.body;
     
-    console.log(req.body)
+    // console.log(req.body)
 
     
     const colaboradores = await ColaboradorServico.find({ 
@@ -373,10 +373,10 @@ router.get('/:servicoId/colaboradores', async (req, res) => {
         $in: colaboradorIds
       }
     });
-    console.log(colaboradoresInfo)
+    // console.log(colaboradoresInfo)
     
     const salaoColaboradores = await SalaoColaborador.find({status:'A'});
-    console.log(salaoColaboradores)
+    // console.log(salaoColaboradores)
     
     const colaboradoresAtivos = colaboradoresInfo.filter(colab =>
       salaoColaboradores.some(salaoColab =>

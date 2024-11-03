@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const Busboy = require('busboy');
 const Arquivos = require('../models/arquivos');
 const Salao = require('../models/salao');
+const Colaborador = require('../models/colaborador')
 const Servico = require('../models/servico');
 const Horario = require('../models/horario');
 const turf = require('turf');
@@ -17,51 +18,67 @@ const {
 
 router.post('/login', async (req, res) => {
   const JWT_SECRET = process.env.JWT_SECRET;
-
   const {
     email,
     senha
   } = req.body;
+
   try {
-    // 1. Verificar se o email existe
+    // 1. Verificar se o email existe em Salão ou Colaborador
     const salao = await Salao.findOne({
       email
     });
-    if (!salao) {
+    const colaborador = await Colaborador.findOne({
+      email
+    });
+
+    console.log(salao)
+    console.log(colaborador)
+
+    // 2. Determinar qual usuário foi encontrado
+    const usuario = salao || colaborador;
+
+    if (!usuario) {
       return res.status(401).json({
         message: 'Email ou senha incorretos'
       });
     }
 
-    // 2. Comparar a senha fornecida com a senha armazenada
-    const senhaValida = await bcrypt.compare(senha, salao.senha);
+    // 3. Comparar a senha fornecida com a senha armazenada
+    const senhaValida = await bcrypt.compare(senha, usuario.senha);
     if (!senhaValida) {
       return res.status(401).json({
         message: 'Email ou senha incorretos'
       });
     }
 
-    // 3. Gerar um token JWT com o id e o email do salão
+    // 4. Gerar um token JWT com o id e o email do usuário
     const token = jwt.sign({
-      id: salao._id,
-      email: salao.email
+      id: usuario._id,
+      email: usuario.email
     }, JWT_SECRET, {
-      expiresIn: '7d', // Token expira em 1 hora
+      expiresIn: '7d', // Token expira em 7 dias
     });
-    // 4. Retornar o token, email e id do salão
+
+    // 5. Retornar o token, email e id do usuário
     return res.json({
       token,
-      email: salao.email,
-      id: salao._id,
+      email: usuario.email,
+      id: usuario._id,
+      tipo: colaborador == null ? "Salao" : "Colaborador"
     });
+
   } catch (error) {
+    console.error(error); // Log para depuração
     return res.status(500).json({
       message: 'Erro no servidor'
     });
   }
 });
 
-// Criar um novo salão
+
+const SALT_ROUNDS = 10; // Definindo rounds para o bcrypt
+
 router.post('/', async (req, res) => {
   const higienizarNome = (nome) => {
     return nome
@@ -72,14 +89,20 @@ router.post('/', async (req, res) => {
 
   // Detectar se a requisição é multipart/form-data
   if (req.is('multipart/form-data')) {
-    const busboy = new Busboy({ headers: req.headers });
+    const busboy = new Busboy({
+      headers: req.headers
+    });
     let files = {};
     let body = {};
 
     // Processar campos de texto e arquivos
     busboy.on('file', (fieldname, file, filename, encoding, mimetype) => {
       if (fieldname === 'capa' || fieldname === 'foto') {
-        files[fieldname] = { file, filename, mimetype }; // Armazenar informações do arquivo
+        files[fieldname] = {
+          file,
+          filename,
+          mimetype
+        }; // Armazenar informações do arquivo
       }
     });
 
@@ -102,9 +125,12 @@ router.post('/', async (req, res) => {
 
         // Upload da capa, se presente
         if (files.capa) {
-          const { file, filename } = files.capa;
+          const {
+            file,
+            filename
+          } = files.capa;
           const nameParts = filename.split('.');
-          const fileName = `${new Date().getTime()}-capa.${nameParts[nameParts.length - 1]}`;
+          const fileName = `${Date.now()}-capa.${nameParts[nameParts.length - 1]}`;
           const path = `saloes/${body.nome}/${fileName}`;
 
           const response = await aws.uploadToS3(file, path);
@@ -118,9 +144,12 @@ router.post('/', async (req, res) => {
 
         // Upload da foto, se presente
         if (files.foto) {
-          const { file, filename } = files.foto;
+          const {
+            file,
+            filename
+          } = files.foto;
           const nameParts = filename.split('.');
-          const fileName = `${new Date().getTime()}-foto.${nameParts[nameParts.length - 1]}`;
+          const fileName = `${Date.now()}-foto.${nameParts[nameParts.length - 1]}`;
           const path = `saloes/${body.nome}/${fileName}`;
 
           const response = await aws.uploadToS3(file, path);
@@ -134,14 +163,21 @@ router.post('/', async (req, res) => {
 
         // Se houver erros, retorne a resposta com os detalhes dos erros
         if (Object.keys(errors).length > 0) {
-          return res.json({ error: true, details: errors });
+          return res.json({
+            error: true,
+            details: errors
+          });
         }
 
         // Criar salão com os caminhos da capa e foto, se disponíveis
         const salaoData = {
           ...body,
-          ...(arquivos.capa && { capa: arquivos.capa }), // Inclui capa se estiver disponível
-          ...(arquivos.foto && { foto: arquivos.foto }), // Inclui foto se estiver disponível
+          ...(arquivos.capa && {
+            capa: arquivos.capa
+          }), // Inclui capa se estiver disponível
+          ...(arquivos.foto && {
+            foto: arquivos.foto
+          }), // Inclui foto se estiver disponível
         };
 
         const salao = await new Salao(salaoData).save();
@@ -187,6 +223,7 @@ router.post('/', async (req, res) => {
     }
   }
 });
+
 
 
 // Listar todos os salões

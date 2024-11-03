@@ -54,10 +54,11 @@ router.post('/filter', async (req, res) => {
       message: err.message
     });
   }
-});
+})
 
 
 router.post('/', async (req, res) => {
+
   try {
     const {
       clienteId,
@@ -67,10 +68,6 @@ router.post('/', async (req, res) => {
       data
     } = req.body;
 
-    // Exibe a data recebida para depuração
-    console.log("Data recebida:", data);
-
-    // Parse da data de agendamento e conversão para o fuso horário local (America/Sao_Paulo)
     let parsedDate = moment.tz(data, 'America/Sao_Paulo');
 
     // Valida se a data é válida
@@ -84,7 +81,6 @@ router.post('/', async (req, res) => {
 
     // Converta a data para UTC antes de salvar no banco de dados
     const dataAgendamento = parsedDate.utc().toISOString();
-
     // Obtenha o dia da semana (0-6), onde 0 = domingo e 6 = sábado
     const diaDaSemana = parsedDate.day();
 
@@ -101,10 +97,9 @@ router.post('/', async (req, res) => {
 
     // Verifique se há horário disponível no dia e no horário selecionado
     const horarioDisponivel = horarios.some(horario => {
-      const inicioHorario = moment(horario.inicio).tz('America/Sao_Paulo');
-      const fimHorario = moment(horario.fim).tz('America/Sao_Paulo');
-      const agendamentoHorario = moment(parsedDate).tz('America/Sao_Paulo');
-
+      const inicioHorario = moment.utc(horario.inicio);
+      const fimHorario = moment.utc(horario.fim);
+      const agendamentoHorario = moment.utc(parsedDate);
       // Verificar se o horário de fim é antes do início (caso inválido)
       if (fimHorario.isBefore(inicioHorario)) {
         console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
@@ -171,21 +166,18 @@ router.post('/', async (req, res) => {
   }
 });
 
-
-
-
-
 router.post('/dias-disponiveis', async (req, res) => {
   try {
     const {
-      colaboradorId, // Recebe colaboradorId no request
+      colaboradorId,
       salaoId,
       servicoId,
       data = moment().utcOffset()
     } = req.body;
 
     const startOfToday = moment.utc().startOf('week').toDate();
-    const endOfNext7Days = moment.utc().add(7, 'days').endOf('week').toDate();
+    const endOfNextDays = moment.utc().add(28, 'days').endOf('day').toDate();
+
 
     const horarios = await Horario.find({
       salaoId,
@@ -193,13 +185,13 @@ router.post('/dias-disponiveis', async (req, res) => {
         $gte: startOfToday
       },
       fim: {
-        $lte: endOfNext7Days
+        $lte: endOfNextDays
       }
     });
 
     const servico = await Servico.findById(servicoId).select('duracao');
+    const servicoDuracao = util.hourToMinutes(moment(servico.duracao).format('HH:mm'));
 
-    // Buscando os agendamentos já existentes para o salão e serviço
     const agendamentos = await Agendamento.find({
       salaoId,
       servicoId,
@@ -207,78 +199,78 @@ router.post('/dias-disponiveis', async (req, res) => {
         $gte: moment().startOf('day').toDate(),
         $lte: moment().add(7, 'days').endOf('day').toDate()
       }
-    });
+    }).populate('servico', 'duracao');
 
     let agenda = [];
     let colaboradores = [];
     let lastDay = moment(data).toDate();
 
-    const servicoDuracao = util.hourToMinutes(moment(servico.duracao).format('HH:mm'));
-    const servicoDuracaoSlots = util.sliceMinutes(
-      moment(servico.duracao),
-      moment(servico.duracao).add(servicoDuracao, 'minutes'),
-      util.SLOT_DURATION,
-      false
-    ).length;
-
-    for (let i = 0; i <= 365 && agenda.length <= 7; i++) {
+    // Loop para encontrar 7 dias com horários disponíveis
+    for (let i = 0; i <= 365 && agenda.length < 7; i++) {
       const espacosValidos = horarios.filter((h) => {
         const diaSemanaDisponivel = h.dias.includes(moment(lastDay).day());
         const servicosDisponiveis = h.especialidades.includes(servicoId);
-        return diaSemanaDisponivel && servicosDisponiveis;
+        const diaDentroDoIntervalo = moment(lastDay).isBetween(
+          moment(h.inicio),
+          moment(h.fim),
+          'day',
+          '[]'
+        );
+
+        return diaSemanaDisponivel && servicosDisponiveis && diaDentroDoIntervalo;
       });
 
       if (espacosValidos.length > 0) {
         let todosHorariosDia = {};
+        let horarioDisponivel = false;
 
-        // Filtra horários especificamente para o colaborador enviado no request
         for (let espaco of espacosValidos) {
           for (let colaborador of espaco.colaboradores) {
-            if (colaborador._id.toString() !== colaboradorId) continue; // Filtra colaborador
+            if (colaborador.toString() !== colaboradorId) continue;
 
-            if (!todosHorariosDia[colaborador._id]) {
-              todosHorariosDia[colaborador._id] = [];
+            if (!todosHorariosDia[colaborador]) {
+              todosHorariosDia[colaborador] = [];
             }
 
-            // Gerar os blocos de horários com base no início e fim
             const slots = util.sliceMinutes(
               util.mergeDateTime(lastDay, espaco.inicio),
               util.mergeDateTime(lastDay, espaco.fim),
               util.SLOT_DURATION
             );
 
-            const agendamentosDia = agendamentos.filter(agendamento => {
-              const agendamentoData = moment(agendamento.data).utc();
-              return agendamentoData.isSame(lastDay, 'day');
-            });
+            const agendamentosDia = agendamentos.filter(agendamento =>
+              moment.utc(agendamento.data).isSame(lastDay, 'day')
+            );
 
-            // Verificar se os slots se sobrepõem com os agendamentos já existentes
-            const slotsDisponiveis = slots.filter((slot) => {
+            const slotsDisponiveis = slots.map((slot, index) => {
               const slotInicio = moment(slot, "HH:mm");
-              const slotFim = moment(slot, "HH:mm").add(servicoDuracao, 'minutes');
+              const slotFim = slotInicio.clone().add(servicoDuracao, 'minutes');
 
-              return !agendamentosDia.some(agendamento => {
+              const isOcupado = agendamentosDia.some(agendamento => {
                 const agendamentoInicio = moment(agendamento.data);
-                const agendamentoFim = moment(agendamento.data).add(servicoDuracao, 'minutes');
+                const agendamentoFim = agendamentoInicio.clone().add(servicoDuracao, 'minutes');
 
-                return (
-                  (slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio))
-                );
+                return slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
               });
+
+              if (!isOcupado) horarioDisponivel = true;
+
+              return {
+                id: `${index}`,
+                available: !isOcupado,
+                time: slotInicio.format("HH:mm"),
+              };
             });
 
-            todosHorariosDia[colaborador._id] = [
-              ...todosHorariosDia[colaborador._id],
-              ...slotsDisponiveis.map((slot, index) => ({
-                id: `${index}`,
-                available: true,
-                time: moment(slot, "HH:mm").format("HH:mm"), // Adiciona 3 horas ao slot
-              }))
+            todosHorariosDia[colaborador] = [
+              ...todosHorariosDia[colaborador],
+              ...slotsDisponiveis
             ];
           }
         }
 
-        if (Object.keys(todosHorariosDia).length > 0) {
+        // Adiciona o dia na agenda se houver pelo menos um horário disponível
+        if (horarioDisponivel) {
           agenda.push({
             [moment(lastDay).format('YYYY-MM-DD')]: todosHorariosDia
           });
@@ -289,23 +281,203 @@ router.post('/dias-disponiveis', async (req, res) => {
     }
 
     colaboradores = await Colaborador.find({
-      _id: colaboradorId, // Busca colaborador específico
+      _id: colaboradorId
     }).select('nome foto');
-
-    colaboradores = colaboradores.map((c) => ({
+    colaboradores = colaboradores.map(c => ({
       ...c._doc,
-      nome: c.nome.split(' ')[0],
+      nome: c.nome.split(' ')[0]
     }));
 
     res.json({
       error: false,
       colaboradores,
-      agenda,
+      agenda
     });
   } catch (err) {
     res.json({
       error: true,
-      message: err.message,
+      message: err.message
+    });
+  }
+});
+
+router.post('/horas-disponiveis', async (req, res) => {
+  try {
+    const {
+      colaboradorId,
+      salaoId,
+      servicoId,
+      data
+    } = req.body;
+
+    // Validação dos campos obrigatórios
+    if (!colaboradorId || !salaoId || !servicoId || !data) {
+      return res.status(400).json({
+        error: true,
+        message: 'Campos obrigatórios não informados'
+      });
+    }
+
+    // Normaliza a data para início do dia
+    const diaSolicitado = moment.utc(data);
+    const numeroDiaSemana = diaSolicitado.day();
+
+    // Busca horários de atendimento configurados
+    const horarios = await Horario.find({
+      salaoId,
+      dias: numeroDiaSemana,
+      colaboradores: colaboradorId,
+      especialidades: servicoId
+    }).populate('colaboradores', 'nome foto');
+
+    if (!horarios.length) {
+      return res.json({
+        error: false,
+        message: 'Não há horários disponíveis para este dia',
+        colaboradores: [],
+        agenda: {}
+      });
+    }
+
+    // Busca a duração do serviço
+    const servico = await Servico.findById(servicoId).select('duracao');
+    if (!servico) {
+      return res.status(404).json({
+        error: true,
+        message: 'Serviço não encontrado'
+      });
+    }
+
+    const servicoDuracao = servico.duracao;
+    console.log(`Duração do serviço: ${servicoDuracao} minutos`);
+
+    // Busca agendamentos existentes
+    const agendamentos = await Agendamento.find({
+      salaoId,
+      colaboradorId,
+      status: 'A',
+      data: {
+        $gte: diaSolicitado.toDate(),
+        $lt: moment(diaSolicitado).endOf('day').toDate()
+      }
+    }).select('data servicoId');
+
+    console.log("Agendamentos existentes:", agendamentos);
+
+    // Monta a agenda do dia
+    let agenda = {};
+    let todosHorariosDia = {};
+
+    function sliceMinutesAndVerification(start, end, duration, agendamentos, servicoDuracao, validation = true) {
+      let slices = [];
+      start = moment(start);
+      end = moment(end);
+
+      while (end > start) {
+        if (validation && start.isSame(moment(), 'day') && start.isBefore(moment())) {
+          // Não adiciona slots passados se for o dia atual
+          start = start.add(duration, 'minutes');
+          continue;
+        }
+
+        // Verifica se o horário está ocupado
+        const slotFim = moment(start).add(servicoDuracao, 'minutes');
+        const conflito = agendamentos.some(agendamento => {
+          const agendamentoInicio = moment(agendamento.data);
+          const agendamentoFim = moment(agendamentoInicio).add(servicoDuracao, 'minutes');
+          return start.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
+        });
+
+        // Se não houver conflito, adiciona o slot
+        if (!conflito) {
+          slices.push(start.format('HH:mm'));
+        }
+
+        start = start.add(duration, 'minutes');
+      }
+      return slices;
+    }
+
+    for (let horario of horarios) {
+      // Gera os slots de horário
+      const slots = sliceMinutesAndVerification(
+        util.mergeDateTime(diaSolicitado, horario.inicio),
+        util.mergeDateTime(diaSolicitado, horario.fim),
+        util.SLOT_DURATION,
+        agendamentos, // Passa os agendamentos existentes
+        servicoDuracao, // Passa a duração do serviço
+        diaSolicitado.isSame(moment(), 'day') // Validação apenas para o dia atual
+      );
+
+      console.log("Slots gerados:", slots);
+
+      const slotsDisponiveis = slots.filter(slot => {
+        const slotInicio = moment(diaSolicitado.format('YYYY-MM-DD') + 'T' + slot);
+        const slotFim = moment(slotInicio).add(servicoDuracao, 'minutes');
+
+        // Verifica se o horário está ocupado
+        const conflito = agendamentos.some(agendamento => {
+          const agendamentoInicio = moment(agendamento.data);
+          const agendamentoFim = moment(agendamentoInicio).add(servicoDuracao, 'minutes');
+          return slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
+        });
+
+        // Verifica se o slot termina antes do fim do expediente
+        const fimExpediente = moment(util.mergeDateTime(diaSolicitado, horario.fim));
+        return !conflito && slotFim.isSameOrBefore(fimExpediente);
+      });
+
+      console.log("Slots disponíveis:", slotsDisponiveis);
+
+      // Formata os slots disponíveis
+      const slotsFormatados = slotsDisponiveis.map((slot, index) => ({
+        id: index.toString(),
+        available: true,
+        time: slot
+      }));
+
+      if (slotsFormatados.length) {
+        if (!todosHorariosDia[colaboradorId]) {
+          todosHorariosDia[colaboradorId] = [];
+        }
+        todosHorariosDia[colaboradorId].push(...slotsFormatados);
+      }
+    }
+
+    // Remove duplicatas mantendo a ordem
+    for (let id in todosHorariosDia) {
+      todosHorariosDia[id] = Array.from(
+        new Map(todosHorariosDia[id].map(slot => [slot.time, slot])).values()
+      ).sort((a, b) => moment(a.time, 'HH:mm').diff(moment(b.time, 'HH:mm')));
+    }
+
+    // Adiciona à agenda
+    if (Object.keys(todosHorariosDia).length) {
+      agenda[diaSolicitado.format('YYYY-MM-DD')] = todosHorariosDia;
+    }
+
+    // Busca informações dos colaboradores
+    const colaboradores = await Colaborador.find({
+      _id: colaboradorId,
+      status: 'A'
+    }).select('nome foto');
+
+    const colaboradoresFormatados = colaboradores.map(c => ({
+      ...c._doc,
+      nome: c.nome.split(' ')[0]
+    }));
+
+    res.json({
+      error: false,
+      colaboradores: colaboradoresFormatados,
+      agenda
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: true,
+      message: 'Erro ao buscar horários disponíveis'
     });
   }
 });

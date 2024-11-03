@@ -8,12 +8,12 @@ const cliente = new Schema({
   },
   telefone: {
     type: String,
-    required: true,
+    required: false,
     unique: true,
   },
   email: {
     type: String,
-    required: true,
+    required: false,
     unique: true,
   },
   senha: {
@@ -22,12 +22,12 @@ const cliente = new Schema({
   },
   dataNascimento: {
     type: String,
-    required: true,
+    required: false,
   },
   sexo: {
     type: String,
     enum: ['M', 'F'],
-    required: true,
+    required: false,
   },
   status: {
     type: String,

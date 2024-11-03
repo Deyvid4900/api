@@ -33,8 +33,8 @@ router.get('/salao/:salaoId', async (req, res) => {
     const startOfToday = moment.utc().startOf('week').toDate(); // Início do dia atual
     const endOfNext7Days = moment.utc().add(7, 'days').endOf('week').toDate(); // Fim do 7º dia
 
-    console.log('Início de hoje UTC:', startOfToday);
-    console.log('Fim dos próximos 7 dias UTC:', endOfNext7Days);
+    // console.log('Início de hoje UTC:', startOfToday);
+    // console.log('Fim dos próximos 7 dias UTC:', endOfNext7Days);
 
     // Filtra horários entre o início de hoje e o fim dos próximos 7 dias no formato UTC
     const horarios = await Horario.find({
@@ -43,7 +43,7 @@ router.get('/salao/:salaoId', async (req, res) => {
       fim: { $lte: endOfNext7Days }   // Verifica horários com fim <= fim dos próximos 7 dias
     });
 
-    console.log('Horários encontrados:', horarios);
+    // console.log('Horários encontrados:', horarios);
 
     if (horarios.length === 0) {
       console.log('Nenhum horário encontrado para os próximos 7 dias.');
