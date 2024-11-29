@@ -58,17 +58,25 @@ router.post('/filter', async (req, res) => {
 
 
 router.post('/', async (req, res) => {
-
   try {
+
+    const payload = req.body.payload || req.body;
+    console.log(payload);
+    
     const {
       clienteId,
       salaoId,
       servicoId,
-      colaboradorId,
-      data
-    } = req.body;
-
+      data,
+      colaboradorId
+    } = payload;
+    
+    console.log(colaboradorId);
     let parsedDate = moment.tz(data, 'America/Sao_Paulo');
+
+    // Extrair o ID do colaborador corretamente do payload
+    const colaborador = colaboradorId.payload ? colaboradorId.payload[0] : colaboradorId; // Pegando o primeiro colaborador da lista
+    const colaboradorIdExtracted = colaborador._id ? colaborador._id : colaborador;
 
     // Valida se a data é válida
     if (!parsedDate.isValid()) {
@@ -88,6 +96,7 @@ router.post('/', async (req, res) => {
     const horarios = await Horario.find({
       salaoId
     });
+
     if (!horarios.length) {
       return res.json({
         error: true,
@@ -100,6 +109,7 @@ router.post('/', async (req, res) => {
       const inicioHorario = moment.utc(horario.inicio);
       const fimHorario = moment.utc(horario.fim);
       const agendamentoHorario = moment.utc(parsedDate);
+
       // Verificar se o horário de fim é antes do início (caso inválido)
       if (fimHorario.isBefore(inicioHorario)) {
         console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
@@ -114,7 +124,6 @@ router.post('/', async (req, res) => {
       return horaDentroIntervalo && diaDisponivel;
     });
 
-
     // Se não houver horário disponível
     if (!horarioDisponivel) {
       return res.json({
@@ -125,7 +134,7 @@ router.post('/', async (req, res) => {
 
     // Verifique se já existe um agendamento para o colaborador e data
     const agendamentoExistente = await Agendamento.findOne({
-      colaboradorId,
+      colaboradorId: colaboradorIdExtracted,
       data: {
         $gte: moment(parsedDate).startOf('minute').utc().toISOString(),
         $lt: moment(parsedDate).add(1, 'hour').startOf('minute').utc().toISOString()
@@ -143,11 +152,14 @@ router.post('/', async (req, res) => {
     const cliente = await Cliente.findById(clienteId).select('nome endereco');
     const salao = await Salao.findById(salaoId).select('_id');
     const servico = await Servico.findById(servicoId).select('preco titulo');
-    const colaborador = await Colaborador.findById(colaboradorId).select('_id');
+    const colaboradorDb = await Colaborador.findById(colaboradorIdExtracted).select('_id');
 
     // CRIAR O AGENDAMENTO E AS TRANSAÇÕES
     let agendamento = {
-      ...req.body,
+      clienteId,
+      salaoId,
+      servicoId,
+      colaboradorId: colaboradorIdExtracted, // Apenas o ID do colaborador
       data: dataAgendamento, // Mantendo a data em UTC no banco de dados
       valor: servico.preco,
     };
@@ -165,6 +177,8 @@ router.post('/', async (req, res) => {
     });
   }
 });
+
+
 
 router.post('/dias-disponiveis', async (req, res) => {
   try {
@@ -536,6 +550,124 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
     });
   }
 });
+
+router.put('/:id', async (req, res) => {
+  try {
+    const {
+      id
+    } = req.params;
+    const {
+      agendamentoInfo,
+      data
+    } = req.body;
+    const clienteId = req.body.clienteId
+    const salaoId = req.body.salaoId
+    const servicoId = req.body.servicoId
+    const colaboradorId = req.body.colaboradorId
+
+
+    let parsedDate = moment.utc(data).add("3", "h");
+    console.log(parsedDate)
+
+    // Valida se a data é válida
+    if (!parsedDate.isValid()) {
+      console.log("Data inválida:", data);
+      return res.json({
+        error: true,
+        message: "Data de agendamento inválida."
+      });
+    }
+
+
+    // Converta a data para UTC antes de salvar no banco de dados
+    const dataAgendamento = parsedDate.utc().toISOString();
+    const diaDaSemana = parsedDate.day();
+
+    // Verifique se o agendamento existe
+    const agendamentoExistente = await Agendamento.findById(id);
+    if (!agendamentoExistente) {
+      return res.json({
+        error: true,
+        message: "Agendamento não encontrado."
+      });
+    }
+
+    // Recupere os horários do salão
+    const horarios = await Horario.find({
+      salaoId
+    });
+    if (!horarios.length) {
+      return res.json({
+        error: true,
+        message: "Nenhum horário disponível para o salão."
+      });
+    }
+
+    // Verifique se há horário disponível no dia e no horário selecionado
+    const horarioDisponivel = horarios.some(horario => {
+      const inicioHorario = moment.utc(horario.inicio);
+      const fimHorario = moment.utc(horario.fim);
+      const agendamentoHorario = moment.utc(parsedDate);
+
+      if (fimHorario.isBefore(inicioHorario)) {
+        console.warn(`Horário de fim inválido para o horário ID ${horario._id}: fim é antes do início.`);
+        return false;
+      }
+
+      const horaDentroIntervalo = agendamentoHorario.isBetween(inicioHorario, fimHorario, null, '[)');
+      const diaDisponivel = horario.dias.includes(diaDaSemana);
+
+      return horaDentroIntervalo && diaDisponivel;
+    });
+
+    if (!horarioDisponivel) {
+      return res.json({
+        error: true,
+        message: `Este horário não está disponível para agendamentos.`
+      });
+    }
+
+    // Verifique se já existe um agendamento para o colaborador e data (excluindo o agendamento atual)
+    const conflitoAgendamento = await Agendamento.findOne({
+      _id: {
+        $ne: id
+      },
+      colaboradorId,
+      data: {
+        $gte: moment(parsedDate).startOf('minute').utc().toISOString(),
+        $lt: moment(parsedDate).add(1, 'hour').startOf('minute').utc().toISOString()
+      }
+    });
+
+    if (conflitoAgendamento) {
+      return res.json({
+        error: true,
+        message: `Este horário já está reservado para outro cliente.`
+      });
+    }
+
+    // Atualize o agendamento
+    agendamentoExistente.clienteId = clienteId;
+    agendamentoExistente.salaoId = salaoId;
+    agendamentoExistente.servicoId = servicoId;
+    agendamentoExistente.colaboradorId = colaboradorId;
+    agendamentoExistente.data = dataAgendamento;
+    agendamentoExistente.valor = (await Servico.findById(servicoId)).preco;
+
+    await agendamentoExistente.save();
+
+    res.json({
+      error: false,
+      message: `Agendamento atualizado com sucesso.`
+    });
+  } catch (err) {
+    res.json({
+      error: true,
+      message: err.message
+    });
+  }
+});
+
 
 
 
