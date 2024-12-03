@@ -76,6 +76,47 @@ router.post('/login', async (req, res) => {
   }
 });
 
+const generateSlug = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-') // Substitui caracteres não alfanuméricos por '-'
+    .replace(/^-+|-+$/g, '');    // Remove hifens extras do início/fim
+};
+
+// Listar todos os salões com nome, foto, email e telefone
+router.get('/saloes', async (req, res) => {
+  try {
+    // Buscando todos os salões
+    const saloes = await Salao.find({}, 'nome foto email telefone capa'); // Selecionando apenas os campos necessários
+    
+    if (saloes.length === 0) {
+      return res.json({
+        error: false,
+        message: 'Nenhum salão encontrado.',
+        saloes: []
+      });
+    }
+
+    // Adicionando o slug a cada salão
+    const saloesComSlug = saloes.map((salao) => ({
+      ...salao.toObject(), // Garante que é um objeto puro
+      slug: `Salao/${generateSlug(salao.nome)}`
+    }));
+
+    res.json({
+      error: false,
+      saloes: saloesComSlug
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: true,
+      message: error.message
+    });
+  }
+});
+
+
 
 const SALT_ROUNDS = 10; // Definindo rounds para o bcrypt
 
@@ -359,6 +400,7 @@ router.post('/filter/nome/:nome', async (req, res) => {
     });
   }
 });
+
 
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const express = require('express');
 const mongoose = require('mongoose');
+
 const Busboy = require('busboy');
 const aws = require('../services/aws');
 const Arquivos = require('../models/arquivos');
@@ -256,6 +257,9 @@ router.get('/salao/:salaoId', async (req, res) => {
   FAZER NA #01
 */
 router.put('/:colaboradorId', async (req, res) => {
+
+
+
   try {
     const {
       vinculo,
