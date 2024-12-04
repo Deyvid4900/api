@@ -62,7 +62,7 @@ router.post('/', async (req, res) => {
 
     const payload = req.body.payload || req.body;
     console.log(payload);
-    
+
     const {
       clienteId,
       salaoId,
@@ -70,7 +70,7 @@ router.post('/', async (req, res) => {
       data,
       colaboradorId
     } = payload;
-    
+
     console.log(colaboradorId);
     let parsedDate = moment.tz(data, 'America/Sao_Paulo');
 
@@ -397,8 +397,9 @@ router.post('/horas-disponiveis', async (req, res) => {
         // Verifica se o horário está ocupado
         const slotFim = moment(start).add(servicoDuracao, 'minutes');
         const conflito = agendamentos.some(agendamento => {
-          const agendamentoInicio = moment(agendamento.data);
-          const agendamentoFim = moment(agendamentoInicio).add(servicoDuracao, 'minutes');
+          const agendamentoInicio = moment(agendamento.data).utc();
+          const agendamentoFim = agendamentoInicio.clone().add(servicoDuracao, 'minutes');
+
           return start.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
         });
 
@@ -426,16 +427,20 @@ router.post('/horas-disponiveis', async (req, res) => {
       console.log("Slots gerados:", slots);
 
       const slotsDisponiveis = slots.filter(slot => {
-        const slotInicio = moment(diaSolicitado.format('YYYY-MM-DD') + 'T' + slot);
-        const slotFim = moment(slotInicio).add(servicoDuracao, 'minutes');
+        const slotInicio = moment.utc(`${diaSolicitado.format('YYYY-MM-DD')}T${slot}`);
+        const slotFim = slotInicio.clone().add(servicoDuracao, 'minutes');
+
 
         // Verifica se o horário está ocupado
         const conflito = agendamentos.some(agendamento => {
-          const agendamentoInicio = moment(agendamento.data);
-          const agendamentoFim = moment(agendamentoInicio).add(servicoDuracao, 'minutes');
-          return slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
-        });
+          console.log(moment(agendamento.data).utc())
+          const agendamentoInicio = moment(agendamento.data).utc();
+          const agendamentoFim = agendamentoInicio.clone().add(servicoDuracao, 'minutes');
 
+          return slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
+
+        });
+        console.log()
         // Verifica se o slot termina antes do fim do expediente
         const fimExpediente = moment(util.mergeDateTime(diaSolicitado, horario.fim));
         return !conflito && slotFim.isSameOrBefore(fimExpediente);
