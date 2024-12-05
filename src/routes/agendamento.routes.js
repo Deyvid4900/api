@@ -56,6 +56,48 @@ router.post('/filter', async (req, res) => {
   }
 })
 
+router.delete('/', async (req, res) => {
+  const {
+    agendamentoId
+  } = req.body;
+  console.log(req.body)
+  try {
+
+    // Verifica se o ID foi fornecido
+    if (!agendamentoId) {
+      return res.status(400).json({
+        error: true,
+        message: 'O ID do agendamento é obrigatório.'
+      });
+    }
+
+    // Busca o agendamento para verificar sua existência
+    const agendamento = await Agendamento.findById(agendamentoId);
+
+    if (!agendamento) {
+      return res.status(404).json({
+        error: true,
+        message: 'Agendamento não encontrado.'
+      });
+    }
+
+    // Remove o agendamento do banco de dados
+    await Agendamento.deleteOne({
+      _id: agendamentoId
+    });
+
+    res.json({
+      error: false,
+      message: 'Agendamento deletado com sucesso.'
+    });
+  } catch (err) {
+    res.status(500).json({
+      error: true,
+      message: err.message
+    });
+  }
+});
+
 
 router.post('/', async (req, res) => {
   try {
