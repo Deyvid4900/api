@@ -57,7 +57,7 @@ router.post('/filter', async (req, res) => {
       message: err.message
     });
   }
-})
+});
 
 router.delete('/', async (req, res) => {
   const {
@@ -246,9 +246,8 @@ router.post('/dias-disponiveis', async (req, res) => {
       data = moment().utcOffset()
     } = req.body;
 
-    const startOfToday = moment.utc().startOf('week').toDate();
-    const endOfNextDays = moment.utc().add(28, 'days').endOf('day').toDate();
-
+    const startOfToday = moment().startOf('week').utc(true).toDate();
+    const endOfNextDays = moment().add(28, 'days').endOf('day').utc(true).toDate();
 
     const horarios = await Horario.find({
       salaoId,
@@ -259,6 +258,7 @@ router.post('/dias-disponiveis', async (req, res) => {
         $lte: endOfNextDays
       }
     });
+
 
     const servico = await Servico.findById(servicoId).select('duracao');
     const servicoDuracao = util.hourToMinutes(moment(servico.duracao).format('HH:mm'));
@@ -390,7 +390,7 @@ router.post('/horas-disponiveis', async (req, res) => {
     }
 
     // Normaliza a data para início do dia
-    const diaSolicitado = moment.utc(data);
+    const diaSolicitado = moment(data).utc(true).startOf('day');
     const numeroDiaSemana = diaSolicitado.day();
 
     // Busca horários de atendimento configurados
@@ -588,7 +588,7 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
     }
 
     // Obter a data e hora atuais
-    const now = moment().utc().subtract(3,"hour");
+    const now = moment().utc().subtract(3, "hour");
     console.log(now)
     // Buscar os agendamentos futuros para o cliente
     const agendamentos = await Agendamento.find({
