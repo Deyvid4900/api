@@ -20,6 +20,7 @@ router.post('/filter', async (req, res) => {
       salaoId
     } = req.body;
 
+
     const agendamentos = await Agendamento.find({
       status: 'A',
       salaoId,
@@ -45,6 +46,8 @@ router.post('/filter', async (req, res) => {
       error: false,
       agendamentos
     });
+
+
 
 
 
@@ -179,9 +182,21 @@ router.post('/', async (req, res) => {
       colaboradorId: colaboradorIdExtracted,
       data: {
         $gte: moment(parsedDate).startOf('minute').utc().toISOString(),
+        $lt: moment(parsedDate).add(30, 'minutes').startOf('minute').utc().toISOString()
+      }
+    });
+
+
+    console.log("Consulta para agendamento existente:");
+    console.log({
+      colaboradorId: colaboradorIdExtracted,
+      intervalo: {
+        $gte: moment(parsedDate).startOf('minute').utc().toISOString(),
         $lt: moment(parsedDate).add(1, 'hour').startOf('minute').utc().toISOString()
       }
     });
+    console.log("Resultado da consulta:", agendamentoExistente);
+
 
     if (agendamentoExistente) {
       return res.json({
@@ -472,21 +487,19 @@ router.post('/horas-disponiveis', async (req, res) => {
         const slotInicio = moment.utc(`${diaSolicitado.format('YYYY-MM-DD')}T${slot}`);
         const slotFim = slotInicio.clone().add(servicoDuracao, 'minutes');
 
-
-        // Verifica se o horário está ocupado
+        // Verifica conflito com agendamentos
         const conflito = agendamentos.some(agendamento => {
-          console.log(moment(agendamento.data).utc())
-          const agendamentoInicio = moment(agendamento.data).utc();
+          const agendamentoInicio = moment.utc(agendamento.data); // Normalizado para UTC
           const agendamentoFim = agendamentoInicio.clone().add(servicoDuracao, 'minutes');
 
           return slotInicio.isBefore(agendamentoFim) && slotFim.isAfter(agendamentoInicio);
-
         });
-        console.log()
+
         // Verifica se o slot termina antes do fim do expediente
         const fimExpediente = moment(util.mergeDateTime(diaSolicitado, horario.fim));
         return !conflito && slotFim.isSameOrBefore(fimExpediente);
       });
+
 
       console.log("Slots disponíveis:", slotsDisponiveis);
 
@@ -545,12 +558,25 @@ router.post('/horas-disponiveis', async (req, res) => {
 
 
 
+const {
+  isValidObjectId
+} = mongoose;
 
 router.get('/agendamentos/:clienteId', async (req, res) => {
   try {
     const {
       clienteId
     } = req.params;
+
+    console.log(`Buscando agendamentos para o cliente: ${clienteId}`);
+
+    // Verifique se o ID é válido
+    if (!isValidObjectId(clienteId)) {
+      return res.status(400).json({
+        error: true,
+        message: 'ID do cliente inválido.'
+      });
+    }
 
     // Verifique se o cliente existe
     const cliente = await Cliente.findById(clienteId);
@@ -562,8 +588,8 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
     }
 
     // Obter a data e hora atuais
-    const now = new Date();
-
+    const now = moment().utc().subtract(3,"hour");
+    console.log(now)
     // Buscar os agendamentos futuros para o cliente
     const agendamentos = await Agendamento.find({
         clienteId,
@@ -585,18 +611,22 @@ router.get('/agendamentos/:clienteId', async (req, res) => {
         }
       ]);
 
-    res.json({
+    // Resposta da API
+    return res.status(200).json({
       error: false,
       agendamentos
     });
 
   } catch (err) {
-    res.status(500).json({
+    console.error('Erro ao buscar agendamentos:', err);
+
+    return res.status(500).json({
       error: true,
-      message: err.message
+      message: 'Erro ao buscar agendamentos. Por favor, tente novamente mais tarde.'
     });
   }
 });
+
 
 router.put('/:id', async (req, res) => {
   try {

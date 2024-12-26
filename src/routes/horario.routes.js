@@ -18,6 +18,7 @@ async function buscarColaboradoresDoSalao(salaoId) {
     return [];
   }
 }
+
 async function buscarServicosDoSalao(salaoId) {
   try {
     const response = await axios.get(`https://api-production-70cb.up.railway.app/servico/salao/${salaoId}`);
@@ -73,9 +74,6 @@ async function criarHorariosPadrao(salaoId) {
 
 router.post('/', async (req, res) => {
   try {
-    // VERIFICAR SE EXISTE ALGUM HORARIO, NAQUELE DIA, PRAQUELE SALÃO
-
-    // SE NÃO HOVER, CADASTRA
     await new Horario(req.body).save();
 
     res.json({
